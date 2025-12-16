@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>网页版 LRC 歌词制作器</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* 自定义滚动条样式 */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #1f2937;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #4b5563;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #6b7280;
+        }
+
+        .lyric-line {
+            transition: all 0.2s ease;
+        }
+        .lyric-line.active {
+            background-color: #374151;
+            border-left: 4px solid #3b82f6;
+            padding-left: 12px; 
+            color: #60a5fa;
+            font-weight: bold;
+            transform: scale(1.02);
+        }
+        .lyric-line.past {
+            opacity: 0.6;
+        }
+        /* 预览模式下的高亮 */
+        .preview-active {
+            color: #fbbf24; /* Amber-400 */
+            font-size: 1.1em;
+            text-shadow: 0 0 10px rgba(251, 191, 36, 0.3);
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-100 h-screen flex flex-col overflow-hidden font-sans">
+
+    <!-- 顶部导航栏 -->
+    <header class="bg-gray-800 border-b border-gray-700 p-4 flex justify-between items-center shrink-0 shadow-md z-10">
+        <div class="flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+            </svg>
+            <h1 class="text-xl font-bold">LRC 歌词制作工坊</h1>
+        </div>
+        <div class="flex gap-3">
+            <button onclick="resetEditor()" class="px-4 py-2 text-sm text-gray-400 hover:text-white transition">重置</button>
+            <button onclick="downloadLRC()" id="downloadBtn" class="bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded shadow flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                下载 .LRC
+            </button>
+        </div>
+    </header>
+
+    <!-- 主体内容 -->
+    <main class="flex-1 flex overflow-hidden">
+        
+        <!-- 左侧：设置与控制 -->
+        <aside class="w-1/3 min-w-[350px] bg-gray-800 p-6 flex flex-col border-r border-gray-700 overflow-y-auto">
+            
+            <!-- 步骤 1: 导入 -->
+            <div id="step1-container" class="space-y-6">
+                <div class="bg-gray-700 p-4 rounded-lg">
+                    <h2 class="text-lg font-semibold mb-3 text-blue-400">1. 导入歌曲 (MP3)</h2>
+                    <input type="file" id="audioInput" accept="audio/*" class="block w-full text-sm text-gray-400
+                        file:mr-4 file:py-2 file:px-4
+                        file:rounded-full file:border-0
+                        file:text-sm file:font-semibold
+                        file:bg-blue-600 file:text-white
+                        hover:file:bg-blue-500
+                        cursor-pointer
+                    "/>
+                </div>
+
+                <div class="bg-gray-700 p-4 rounded-lg flex-1 flex flex-col">
+                    <h2 class="text-lg font-semibold mb-3 text-blue-400">2. 粘贴歌词文本</h2>
+                    <textarea id="rawLyrics" class="w-full h-64 bg-gray-900 text-gray-200 p-3 rounded border border-gray-600 focus:border-blue-500 focus:outline-none resize-none text-sm" placeholder="在此处粘贴纯文本歌词...&#10;每行一句&#10;不要带时间轴"></textarea>
+                </div>
+
+                <button onclick="startEditing()" id="startBtn" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded shadow-lg transition transform active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                    开始制作 / 重新加载
+                </button>
+            </div>
+
+            <!-- 音频播放器 (始终可见但不可交互，通过自定义控件控制) -->
+            <div class="mt-auto pt-6 border-t border-gray-600">
+                <audio id="audioPlayer" class="w-full mb-4 hidden"></audio>
+                
+                <!-- 自定义控制面板 -->
+                <div class="bg-gray-900 p-4 rounded-xl border border-gray-700 shadow-inner">
+                    <div class="flex justify-between text-xs text-gray-400 mb-1">
+                        <span id="currentTimeDisplay">00:00.00</span>
+                        <span id="durationDisplay">00:00.00</span>
+                    </div>
+                    <!-- 进度条 -->
+                    <div class="w-full bg-gray-700 rounded-full h-2 mb-4 cursor-pointer relative group" id="progressBarContainer">
+                        <div id="progressBar" class="bg-blue-500 h-2 rounded-full w-0 transition-all duration-100 ease-linear relative">
+                            <div class="absolute right-0 -top-1 w-4 h-4 bg-white rounded-full shadow opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-2">
+                        <button id="playPauseBtn" onclick="togglePlay()" class="bg-gray-700 hover:bg-gray-600 text-white py-2 rounded transition flex justify-center items-center gap-2">
+                            <span id="playIcon">▶ 播放 (空格)</span>
+                        </button>
+                        <button onclick="rewind(5)" class="bg-gray-700 hover:bg-gray-600 text-white py-2 rounded transition">
+                            ⏪ 后退 5秒
+                        </button>
+                    </div>
+                    
+                    <button id="stampBtn" onclick="stampCurrentLine()" class="w-full mt-4 bg-rose-600 hover:bg-rose-500 text-white font-bold py-4 rounded-lg shadow-lg text-lg transition transform active:scale-95 border-b-4 border-rose-800 active:border-b-0 active:translate-y-1">
+                        📍 插入时间标签 (Enter)
+                    </button>
+                    <p class="text-center text-xs text-gray-500 mt-2">提示：使用键盘快捷键效率更高</p>
+                </div>
+            </div>
+        </aside>
+
+        <!-- 右侧：歌词编辑器列表 -->
+        <section class="flex-1 bg-gray-900 relative flex flex-col">
+            <!-- 头部 -->
+            <div class="bg-gray-800 px-6 py-3 border-b border-gray-700 flex justify-between items-center">
+                <h3 class="font-semibold text-gray-300">歌词预览与编辑区</h3>
+                <div class="flex items-center gap-2 text-sm">
+                    <span class="w-3 h-3 bg-blue-500 rounded-full inline-block"></span> 待打轴
+                    <span class="w-3 h-3 bg-rose-500 rounded-full inline-block ml-2"></span> 已打轴
+                    <span class="w-3 h-3 bg-yellow-500 rounded-full inline-block ml-2"></span> 当前播放
+                </div>
+            </div>
+
+            <!-- 列表容器 -->
+            <div id="lyricsList" class="flex-1 overflow-y-auto p-6 space-y-1 relative">
+                <div class="text-center text-gray-500 mt-20">
+                    <p class="text-xl">👋 欢迎使用</p>
+                    <p class="mt-2 text-sm">请在左侧上传 MP3 并粘贴歌词以开始。</p>
+                </div>
+            </div>
+
+            <!-- 预览遮罩 (Overlay) - 可选功能，这里直接在列表中做预览更直观 -->
+        </section>
+    </main>
+
+    <script>
+        // --- 变量定义 ---
+        let audio = document.getElementById('audioPlayer');
+        let lyricsData = []; // 存储结构: { time: float, text: string, displayTime: string }
+        let currentLineIndex = 0; // 当前需要打轴的行索引
+        let isPlaying = false;
+        
+        // DOM 元素
+        const lyricsListEl = document.getElementById('lyricsList');
+        const rawLyricsEl = document.getElementById('rawLyrics');
+        const fileInput = document.getElementById('audioInput');
+        const startBtn = document.getElementById('startBtn');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const stampBtn = document.getElementById('stampBtn');
+        const playPauseBtn = document.getElementById('playPauseBtn');
+        
+        // --- 初始化事件监听 ---
+
+        // 1. 文件上传监听
+        fileInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const url = URL.createObjectURL(file);
+                audio.src = url;
+                checkReadyState();
+            }
+        });
+
+        // 2. 文本输入监听
+        rawLyricsEl.addEventListener('input', checkReadyState);
+
+        function checkReadyState() {
+            if (fileInput.files.length > 0 && rawLyricsEl.value.trim().length > 0) {
+                startBtn.disabled = false;
+                startBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+            } else {
+                startBtn.disabled = true;
+            }
+        }
+
+        // --- 核心逻辑：开始制作 ---
+        function startEditing() {
+            const rawText = rawLyricsEl.value;
+            // 按行分割，过滤空行
+            const lines = rawText.split('\n').map(l => l.trim()).filter(l => l !== '');
+            
+            if (lines.length === 0) {
+                alert('请至少输入一行歌词');
+                return;
+            }
+
+            // 初始化数据
+            lyricsData = lines.map(line => ({
+                text: line,
+                time: null,
+                displayTime: '[--:--.--]'
+            }));
+            
+            currentLineIndex = 0;
+            renderLyricsList();
+            
+            // 激活下载按钮
+            downloadBtn.disabled = false;
+            
+            // 自动开始播放（可选）
+            // audio.play();
+            // isPlaying = true;
+            // updatePlayButton();
+        }
+
+        // --- 渲染歌词列表 ---
+        function renderLyricsList() {
+            lyricsListEl.innerHTML = '';
+            
+            lyricsData.forEach((item, index) => {
+                const row = document.createElement('div');
+                row.className = `lyric-line p-3 rounded cursor-pointer flex items-center group hover:bg-gray-800 border border-transparent ${index === currentLineIndex ? 'active' : ''}`;
+                row.id = `line-${index}`;
+                
+                // 点击行可以手动跳转进度（可选功能）或者手动重置该行时间
+                row.onclick = () => {
+                    if (item.time !== null) {
+                        audio.currentTime = item.time;
+                        audio.play();
+                        isPlaying = true;
+                        updatePlayButton();
+                    }
+                };
+
+                const timeTag = document.createElement('span');
+                timeTag.className = `font-mono text-sm mr-4 ${item.time !== null ? 'text-rose-400' : 'text-gray-600'}`;
+                timeTag.innerText = item.displayTime;
+
+                const textSpan = document.createElement('span');
+                textSpan.className = `flex-1 text-lg ${item.time !== null ? 'text-gray-200' : 'text-gray-400'}`;
+                textSpan.innerText = item.text;
+
+                // 撤销按钮 (仅当有时间时显示)
+                if (item.time !== null) {
+                    const undoBtn = document.createElement('button');
+                    undoBtn.innerHTML = '↺';
+                    undoBtn.className = 'opacity-0 group-hover:opacity-100 text-gray-400 hover:text-white px-2';
+                    undoBtn.title = '重置此行时间';
+                    undoBtn.onclick = (e) => {
+                        e.stopPropagation();
+                        resetLine(index);
+                    };
+                    row.appendChild(undoBtn);
+                }
+
+                row.appendChild(timeTag);
+                row.appendChild(textSpan);
+                lyricsListEl.appendChild(row);
+            });
+
+            scrollToCurrent();
+        }
+
+        // --- 核心逻辑：打轴 (Stamp) ---
+        function stampCurrentLine() {
+            if (currentLineIndex >= lyricsData.length) return;
+
+            const currentTime = audio.currentTime;
+            const formattedTime = formatTime(currentTime);
+
+            // 更新数据
+            lyricsData[currentLineIndex].time = currentTime;
+            lyricsData[currentLineIndex].displayTime = formattedTime;
+
+            // 移动到下一行
+            currentLineIndex++;
+            
+            // 重新渲染列表（高效做法是只更新DOM，这里为简单直接重绘或局部更新）
+            renderLyricsList();
+        }
+
+        // 重置某一行
+        function resetLine(index) {
+            lyricsData[index].time = null;
+            lyricsData[index].displayTime = '[--:--.--]';
+            currentLineIndex = index; // 回到这一行
+            renderLyricsList();
+        }
+
+        // --- 播放控制与预览 ---
+        
+        function togglePlay() {
+            if (audio.paused) {
+                audio.play();
+                isPlaying = true;
+            } else {
+                audio.pause();
+                isPlaying = false;
+            }
+            updatePlayButton();
+        }
+
+        function rewind(seconds) {
+            audio.currentTime = Math.max(0, audio.currentTime - seconds);
+        }
+
+        function updatePlayButton() {
+            const icon = isPlaying ? '⏸ 暂停 (空格)' : '▶ 播放 (空格)';
+            document.getElementById('playIcon').innerText = icon;
+            // 高亮按钮状态
+            if(isPlaying) {
+                playPauseBtn.classList.add('bg-blue-600', 'border-blue-400');
+                playPauseBtn.classList.remove('bg-gray-700');
+            } else {
+                playPauseBtn.classList.remove('bg-blue-600', 'border-blue-400');
+                playPauseBtn.classList.add('bg-gray-700');
+            }
+        }
+
+        // 监听音频更新 (用于进度条和预览高亮)
+        audio.addEventListener('timeupdate', () => {
+            const currentTime = audio.currentTime;
+            const duration = audio.duration || 0;
+
+            // 1. 更新时间显示
+            document.getElementById('currentTimeDisplay').innerText = formatTime(currentTime);
+            document.getElementById('durationDisplay').innerText = formatTime(duration);
+
+            // 2. 更新进度条
+            const percent = (currentTime / duration) * 100;
+            document.getElementById('progressBar').style.width = `${percent}%`;
+
+            // 3. 预览逻辑：高亮当前播放到的歌词行
+            // 只有当该行已经打过轴（有时间）才参与比对
+            let activePreviewIndex = -1;
+            for (let i = 0; i < lyricsData.length; i++) {
+                if (lyricsData[i].time !== null && lyricsData[i].time <= currentTime + 0.2) { // 0.2s 容错
+                    activePreviewIndex = i;
+                }
+            }
+
+            // 移除旧的高亮，添加新的
+            document.querySelectorAll('.lyric-line').forEach(el => el.classList.remove('preview-active'));
+            if (activePreviewIndex !== -1) {
+                const activeEl = document.getElementById(`line-${activePreviewIndex}`);
+                if (activeEl) activeEl.classList.add('preview-active');
+            }
+        });
+
+        // 进度条点击跳转
+        document.getElementById('progressBarContainer').addEventListener('click', (e) => {
+            const rect = e.target.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const width = rect.width;
+            const duration = audio.duration;
+            if (duration) {
+                audio.currentTime = (x / width) * duration;
+            }
+        });
+
+        // --- 辅助工具 ---
+        
+        // 格式化时间 [mm:ss.xx]
+        function formatTime(seconds) {
+            const min = Math.floor(seconds / 60);
+            const sec = Math.floor(seconds % 60);
+            const ms = Math.floor((seconds % 1) * 100);
+            
+            const minStr = min.toString().padStart(2, '0');
+            const secStr = sec.toString().padStart(2, '0');
+            const msStr = ms.toString().padStart(2, '0');
+            
+            return `[${minStr}:${secStr}.${msStr}]`;
+        }
+
+        // 滚动到当前编辑行
+        function scrollToCurrent() {
+            const el = document.getElementById(`line-${currentLineIndex}`);
+            if (el) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }
+
+        // 下载文件
+        function downloadLRC() {
+            let content = '';
+            // 添加LRC头信息 (可选)
+            content += "[ti:未知标题]\n[ar:未知艺术家]\n[al:Created by LRC Maker]\n";
+            
+            lyricsData.forEach(item => {
+                if (item.time !== null) {
+                    content += `${item.displayTime}${item.text}\n`;
+                }
+            });
+
+            const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'lyrics.lrc';
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function resetEditor() {
+            if(confirm("确定要清空所有内容吗？")) {
+                location.reload();
+            }
+        }
+
+        // --- 键盘快捷键 ---
+        document.addEventListener('keydown', (e) => {
+            // 只有当不在输入框时才触发快捷键
+            if (document.activeElement === rawLyricsEl) return;
+
+            if (e.code === 'Space') {
+                e.preventDefault(); // 防止页面滚动
+                togglePlay();
+            } else if (e.code === 'Enter') {
+                e.preventDefault();
+                stampBtn.click(); // 触发视觉反馈
+            }
+        });
+
+    </script>
+</body>
+</html>

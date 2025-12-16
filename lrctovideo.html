@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>歌词视频生成器 (Pro版)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* 保持原有样式 */
+        #canvas-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-image:
+                linear-gradient(45deg, #1f2937 25%, transparent 25%),
+                linear-gradient(-45deg, #1f2937 25%, transparent 25%),
+                linear-gradient(45deg, transparent 75%, #1f2937 75%),
+                linear-gradient(-45deg, transparent 75%, #1f2937 75%);
+            background-size: 20px 20px;
+            background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+            overflow: hidden;
+            box-shadow: inset 0 0 20px #000;
+        }
+        
+        canvas {
+            box-shadow: 0 0 15px rgba(0,0,0,0.5);
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #111827; }
+        ::-webkit-scrollbar-thumb { background: #374151; border-radius: 3px; }
+        
+        /* 范围滑块样式优化 */
+        input[type=range] {
+            -webkit-appearance: none; 
+            background: transparent; 
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 16px;
+            width: 16px;
+            border-radius: 50%;
+            background: #3b82f6;
+            cursor: pointer;
+            margin-top: -6px; 
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px;
+            cursor: pointer;
+            background: #4b5563;
+            border-radius: 2px;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-100 h-screen flex flex-col overflow-hidden font-sans">
+
+    <!-- 顶部 -->
+    <header class="bg-gray-800 border-b border-gray-700 p-3 flex justify-between items-center shrink-0 z-10">
+        <div class="flex items-center gap-2">
+            <span class="text-2xl">🎬</span>
+            <h1 class="text-lg font-bold text-white">LRC 歌词视频生成器 <span class="text-xs bg-blue-600 px-2 py-0.5 rounded ml-2">Pro</span></h1>
+        </div>
+        <div class="text-xs text-gray-400">
+            优化提示：录制期间请勿切换标签页
+        </div>
+    </header>
+
+    <main class="flex-1 flex overflow-hidden">
+        <!-- 左侧：设置面板 -->
+        <aside class="w-80 min-w-[320px] bg-gray-800 border-r border-gray-700 flex flex-col overflow-y-auto">
+            
+            <div class="p-4 space-y-6">
+                <!-- 1. 文件上传 -->
+                <div class="space-y-3 p-3 bg-gray-700 rounded-lg">
+                    <h2 class="text-sm font-bold text-blue-300 uppercase">1. 素材上传</h2>
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">MP3 音频</label>
+                        <input type="file" id="audioInput" accept="audio/*" class="w-full text-xs text-gray-300 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:bg-blue-600 file:text-white hover:file:bg-blue-500 cursor-pointer">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">LRC 歌词文件</label>
+                        <input type="file" id="lrcInput" accept=".lrc,.txt" class="w-full text-xs text-gray-300 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:bg-purple-600 file:text-white hover:file:bg-purple-500 cursor-pointer">
+                    </div>
+                </div>
+
+                <!-- 2. 视频设置 -->
+                <div class="space-y-3 p-3 bg-gray-700 rounded-lg">
+                    <h2 class="text-sm font-bold text-green-300 uppercase">2. 视频尺寸</h2>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button onclick="setRatio(1080, 1920)" class="ratio-btn bg-gray-600 hover:bg-gray-500 text-xs py-2 rounded text-center active:bg-green-600">9:16 (抖音)</button>
+                        <button onclick="setRatio(1080, 1080)" class="ratio-btn bg-gray-600 hover:bg-gray-500 text-xs py-2 rounded text-center active:bg-green-600">1:1 (INS)</button>
+                        <button onclick="setRatio(1920, 1080)" class="ratio-btn bg-gray-600 hover:bg-gray-500 text-xs py-2 rounded text-center active:bg-green-600">16:9 (横屏)</button>
+                        <button onclick="setRatio(1440, 1080)" class="ratio-btn bg-gray-600 hover:bg-gray-500 text-xs py-2 rounded text-center active:bg-green-600">4:3 (复古)</button>
+                    </div>
+                </div>
+
+                <!-- 3. 外观与特效 -->
+                <div class="space-y-3 p-3 bg-gray-700 rounded-lg">
+                    <h2 class="text-sm font-bold text-yellow-300 uppercase">3. 样式与特效</h2>
+                    
+                    <!-- 视觉特效选择 -->
+                    <div class="mb-3">
+                        <label class="block text-xs text-gray-400 mb-1">视觉特效</label>
+                        <select id="effectType" class="w-full bg-gray-900 border border-gray-600 rounded px-2 py-1 text-sm text-yellow-400 font-bold">
+                            <option value="normal">经典平滑滚动 (Smooth)</option>
+                            <option value="neon">霓虹发光 (Neon Glow)</option>
+                            <option value="blur">聚焦模糊 (Focus Blur)</option>
+                            <option value="pulse">动感脉冲 (Pulse)</option>
+                        </select>
+                    </div>
+
+                    <!-- 字体大小 -->
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <label class="block text-xs text-gray-400">普通字号</label>
+                            <input type="number" id="fontSizeNormal" value="30" class="w-full bg-gray-900 border border-gray-600 rounded px-2 py-1 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-400">高亮字号</label>
+                            <input type="number" id="fontSizeActive" value="60" class="w-full bg-gray-900 border border-gray-600 rounded px-2 py-1 text-sm font-bold text-yellow-500">
+                        </div>
+                    </div>
+
+                    <!-- 行距控制 -->
+                    <div>
+                        <div class="flex justify-between">
+                            <label class="block text-xs text-gray-400">行距 (间隙)</label>
+                            <span id="lineHeightVal" class="text-xs text-gray-400">1.8x</span>
+                        </div>
+                        <input type="range" id="lineHeightMult" min="1.0" max="3.0" step="0.1" value="1.8" class="w-full mt-1">
+                    </div>
+
+                    <!-- 颜色 -->
+                    <div class="grid grid-cols-3 gap-2 mt-2">
+                        <div>
+                            <label class="block text-[10px] text-gray-400 text-center">普通色</label>
+                            <input type="color" id="colorText" value="#ffffff" class="w-full h-6 bg-transparent cursor-pointer rounded">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] text-gray-400 text-center">高亮色</label>
+                            <input type="color" id="colorActive" value="#facc15" class="w-full h-6 bg-transparent cursor-pointer rounded">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] text-gray-400 text-center">背景色</label>
+                            <input type="color" id="colorBg" value="#000000" class="w-full h-6 bg-transparent cursor-pointer rounded">
+                        </div>
+                    </div>
+
+                    <!-- 字体 -->
+                    <div class="mt-2">
+                        <label class="block text-xs text-gray-400">字体</label>
+                        <select id="fontFamily" class="w-full bg-gray-900 border border-gray-600 rounded px-2 py-1 text-sm">
+                            <option value="'Microsoft YaHei', sans-serif" selected>微软雅黑 (Bold)</option>
+                            <option value="Arial, sans-serif">Arial</option>
+                            <option value="'PingFang SC', sans-serif">苹方</option>
+                            <option value="'Times New Roman', serif">宋体/衬线</option>
+                            <option value="cursive">手写风格</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 控制按钮区 -->
+            <div class="mt-auto p-4 border-t border-gray-700 bg-gray-800 sticky bottom-0">
+                <div id="statusText" class="text-center text-xs mb-2 text-gray-400">准备就绪</div>
+                
+                <div class="grid grid-cols-1 gap-2">
+                    <button id="previewBtn" class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-4 rounded transition flex justify-center items-center gap-2">
+                        <span>▶</span> 仅播放/预览
+                    </button>
+                    
+                    <button id="recordBtn" class="bg-rose-600 hover:bg-rose-500 text-white font-bold py-3 px-4 rounded shadow-lg transition flex justify-center items-center gap-2 border-b-4 border-rose-800 active:border-b-0 active:translate-y-1">
+                        <span class="w-3 h-3 bg-white rounded-full animate-pulse hidden" id="recordDot"></span>
+                        <span id="recordBtnText">🎥 开始录制视频</span>
+                    </button>
+                    
+                    <a id="downloadLink" class="hidden bg-green-600 hover:bg-green-500 text-center text-white font-bold py-2 px-4 rounded transition">
+                        ⬇️ 下载视频
+                    </a>
+                </div>
+            </div>
+        </aside>
+
+        <!-- 右侧：画布区域 -->
+        <section id="canvas-container" class="flex-1 p-8 relative">
+            <canvas id="videoCanvas"></canvas>
+            <audio id="audioElement" crossorigin="anonymous"></audio>
+        </section>
+    </main>
+
+    <script>
+        // --- 核心变量 ---
+        const canvas = document.getElementById('videoCanvas');
+        const ctx = canvas.getContext('2d');
+        const audio = document.getElementById('audioElement');
+        
+        let lyrics = []; 
+        let animationId;
+        
+        // 录制相关
+        let mediaRecorder;
+        let recordedChunks = [];
+        let audioContext;
+        let audioSource;
+        let dest;
+        
+        // 渲染状态
+        let smoothScrollIndex = 0; // 用于平滑滚动的虚拟索引
+        
+        // 配置状态
+        const config = {
+            width: 1080,
+            height: 1920,
+            fontNormal: 30,
+            fontActive: 60,
+            lineHeightMult: 1.8,
+            colorText: '#ffffff',
+            colorActive: '#facc15',
+            colorBg: '#000000',
+            fontFamily: "'Microsoft YaHei', sans-serif",
+            effect: 'normal' // normal, neon, blur, pulse
+        };
+
+        // --- 初始化 ---
+        function initCanvas() {
+            canvas.width = config.width;
+            canvas.height = config.height;
+            ctx.fillStyle = config.colorBg;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            const container = document.getElementById('canvas-container');
+            const scale = Math.min(
+                (container.clientWidth - 40) / config.width,
+                (container.clientHeight - 40) / config.height
+            );
+            canvas.style.width = `${config.width * scale}px`;
+            canvas.style.height = `${config.height * scale}px`;
+        }
+
+        window.addEventListener('resize', initCanvas);
+        initCanvas();
+
+        // --- 事件监听 ---
+
+        // UI 绑定
+        const bind = (id, key, parser = v => v, callback = null) => {
+            document.getElementById(id).addEventListener('input', (e) => {
+                config[key] = parser(e.target.value);
+                if (callback) callback(e.target.value);
+                if (audio.paused) drawFrame();
+            });
+        };
+
+        bind('fontSizeNormal', 'fontNormal', parseInt);
+        bind('fontSizeActive', 'fontActive', parseInt);
+        bind('lineHeightMult', 'lineHeightMult', parseFloat, (v) => document.getElementById('lineHeightVal').innerText = v + 'x');
+        bind('colorText', 'colorText');
+        bind('colorBg', 'colorBg');
+        bind('colorActive', 'colorActive');
+        
+        document.getElementById('fontFamily').addEventListener('change', (e) => { config.fontFamily = e.target.value; if(audio.paused) drawFrame(); });
+        document.getElementById('effectType').addEventListener('change', (e) => { config.effect = e.target.value; if(audio.paused) drawFrame(); });
+
+        window.setRatio = (w, h) => {
+            config.width = w;
+            config.height = h;
+            initCanvas();
+            if(audio.paused) drawFrame();
+        }
+
+        // 文件监听
+        document.getElementById('audioInput').addEventListener('change', (e) => {
+            if(e.target.files[0]) audio.src = URL.createObjectURL(e.target.files[0]);
+        });
+
+        document.getElementById('lrcInput').addEventListener('change', (e) => {
+            if(e.target.files[0]) {
+                const reader = new FileReader();
+                reader.onload = (ev) => parseLRC(ev.target.result);
+                reader.readAsText(e.target.files[0]);
+            }
+        });
+
+        document.getElementById('previewBtn').addEventListener('click', togglePreview);
+        document.getElementById('recordBtn').addEventListener('click', toggleRecording);
+
+        // --- 逻辑功能 ---
+
+        function parseLRC(lrcText) {
+            lyrics = [];
+            const lines = lrcText.split('\n');
+            const timeReg = /\[(\d{2}):(\d{2})\.(\d{2,3})\]/;
+            
+            lines.forEach(line => {
+                const match = timeReg.exec(line);
+                if (match) {
+                    const min = parseInt(match[1]);
+                    const sec = parseInt(match[2]);
+                    const ms = parseInt(match[3].padEnd(3, '0'));
+                    const time = min * 60 + sec + ms / 1000;
+                    const text = line.replace(timeReg, '').trim();
+                    if(text) lyrics.push({ time, text });
+                }
+            });
+            lyrics.sort((a, b) => a.time - b.time);
+            document.getElementById('statusText').innerText = `已加载 ${lyrics.length} 行歌词`;
+            drawFrame();
+        }
+
+        function initAudioContext() {
+            if (!audioContext) {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                audioSource = audioContext.createMediaElementSource(audio);
+                dest = audioContext.createMediaStreamDestination();
+                audioSource.connect(dest);
+                audioSource.connect(audioContext.destination);
+            } else if (audioContext.state === 'suspended') {
+                audioContext.resume();
+            }
+        }
+
+        // --- 核心渲染引擎 ---
+
+        function drawFrame() {
+            // 1. 清除画布
+            ctx.fillStyle = config.colorBg;
+            ctx.fillRect(0, 0, config.width, config.height);
+
+            if (lyrics.length === 0) {
+                // 空状态提示
+                ctx.fillStyle = "#555";
+                ctx.font = `30px ${config.fontFamily}`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText("请上传素材...", config.width/2, config.height/2);
+                return;
+            }
+
+            const currentTime = audio.currentTime;
+            
+            // 2. 查找当前歌词索引
+            let activeIndex = -1;
+            for (let i = 0; i < lyrics.length; i++) {
+                if (currentTime >= lyrics[i].time) {
+                    activeIndex = i;
+                } else {
+                    break;
+                }
+            }
+
+            // 3. 平滑滚动算法
+            // 我们不希望 smoothScrollIndex 瞬间跳到 activeIndex，而是平滑过渡
+            // 使用 Lerp (Linear Interpolation) 
+            let targetIndex = activeIndex < 0 ? 0 : activeIndex;
+            
+            // 滚动速度系数 (0.1 较慢平滑，0.2 较快)
+            const lerpSpeed = 0.1;
+            smoothScrollIndex += (targetIndex - smoothScrollIndex) * lerpSpeed;
+
+            // 4. 计算布局参数
+            const centerY = config.height / 2;
+            const lineHeight = config.fontNormal * config.lineHeightMult; // 使用设定的行距
+            
+            // 5. 自动适应行数：根据屏幕高度，计算上下各能画多少行
+            // 预留中间高亮区域的空间 (假设高亮行大概占 2-3 倍普通行高)
+            const availableHalfHeight = (config.height / 2) - (config.fontActive); 
+            const visibleLinesHalf = Math.ceil(availableHalfHeight / lineHeight) + 2; // 多画2行防止边缘突然消失
+
+            // 6. 绘制循环
+            // 我们从 smoothScrollIndex 上下各延伸 visibleLinesHalf 行进行绘制
+            const startRenderIndex = Math.max(0, Math.floor(smoothScrollIndex - visibleLinesHalf));
+            const endRenderIndex = Math.min(lyrics.length - 1, Math.floor(smoothScrollIndex + visibleLinesHalf));
+
+            for (let i = startRenderIndex; i <= endRenderIndex; i++) {
+                const item = lyrics[i];
+                // 计算该行相对于“当前焦点位置”的偏移量 (float)
+                const offset = i - smoothScrollIndex; 
+                
+                // 根据 offset 计算 Y 坐标
+                // 当 offset 为 0 时，y = centerY
+                // 当 offset 为 1 时，y = centerY + lineHeight
+                // 这里的 lineHeight 是基础距离，我们可以让靠近中心的距离拉大一点
+                let y = centerY + (offset * lineHeight);
+
+                // 状态判定
+                const isActive = (i === activeIndex);
+                
+                // --- 特效逻辑应用 ---
+                ctx.save(); // 保存状态，防止特效污染其他行
+
+                // A. 字体大小过渡
+                // 离中心越近，字体越大。如果是当前行，直接使用 fontActive
+                // 这里的 transitionFactor 是 0~1，0表示完全在中心
+                let size = config.fontNormal;
+                let color = config.colorText;
+                let alpha = 1.0;
+
+                if (isActive) {
+                    size = config.fontActive;
+                    color = config.colorActive;
+                    
+                    // 特效：动感脉冲 (Pulse)
+                    if (config.effect === 'pulse') {
+                        // 利用时间生成简单的正弦波缩放
+                        const pulseScale = 1 + Math.sin(Date.now() / 100) * 0.05;
+                        size *= pulseScale;
+                    }
+                } else {
+                    // 渐隐效果：离中心越远透明度越低
+                    const dist = Math.abs(offset);
+                    alpha = Math.max(0.1, 1 - (dist / visibleLinesHalf));
+                    // 稍微变小一点
+                    size = config.fontNormal * 0.9;
+                }
+
+                // 特效：霓虹发光 (Neon)
+                if (config.effect === 'neon' && isActive) {
+                    ctx.shadowBlur = 30;
+                    ctx.shadowColor = config.colorActive;
+                }
+
+                // 特效：聚焦模糊 (Blur)
+                if (config.effect === 'blur' && !isActive) {
+                    // 离中心越远越模糊
+                    const blurAmount = Math.min(10, Math.abs(offset) * 2);
+                    ctx.filter = `blur(${blurAmount}px)`;
+                    alpha *= 0.6; // 模糊模式下背景更暗
+                }
+
+                // 绘制属性设置
+                ctx.font = `bold ${size}px ${config.fontFamily}`;
+                ctx.fillStyle = isActive ? color : hexToRgba(color, alpha);
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+
+                // 自动换行绘制
+                // 宽度限制：左右各留 10% 边距
+                const maxW = config.width * 0.8;
+                // 计算该行的实际高度占用（如果有换行，需要调整后续行的位置吗？这里为了流动简单，暂时假设每行高度一致，或者基于中心自动散开）
+                // 优化：为了防止文字重叠，我们可以动态计算 Y。但平滑滚动中动态 Y 比较复杂。
+                // 简单的方案：行距设大一点，且换行文字垂直居中于那个 Y 点。
+                
+                wrapText(ctx, item.text, config.width / 2, y, maxW, size * 1.4);
+
+                ctx.restore(); // 恢复状态
+            }
+
+            if (!audio.paused) {
+                animationId = requestAnimationFrame(drawFrame);
+            }
+        }
+
+        // 工具：自动换行
+        function wrapText(context, text, x, y, maxWidth, lineHeight) {
+            const words = text.split(''); 
+            let line = '';
+            let lines = [];
+
+            for(let n = 0; n < words.length; n++) {
+                let testLine = line + words[n];
+                let metrics = context.measureText(testLine);
+                let testWidth = metrics.width;
+                if (testWidth > maxWidth && n > 0) {
+                    lines.push(line);
+                    line = words[n];
+                } else {
+                    line = testLine;
+                }
+            }
+            lines.push(line);
+
+            // 垂直居中绘制块
+            const totalHeight = lines.length * lineHeight;
+            // 修正 Y 起点，使整个文本块的中心位于 y
+            let startY = y - ((lines.length - 1) * lineHeight) / 2;
+
+            for (let k = 0; k < lines.length; k++) {
+                context.fillText(lines[k], x, startY + (k * lineHeight));
+            }
+        }
+
+        function hexToRgba(hex, alpha) {
+            let r = parseInt(hex.slice(1, 3), 16);
+            let g = parseInt(hex.slice(3, 5), 16);
+            let b = parseInt(hex.slice(5, 7), 16);
+            return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+        }
+
+        // --- 播放与录制控制 (保持不变) ---
+
+        function togglePreview() {
+            if (audio.src === "") return alert("请先上传音频文件");
+            if (lyrics.length === 0) return alert("请先上传LRC文件");
+
+            if (audio.paused) {
+                audio.play();
+                drawFrame();
+                document.getElementById('previewBtn').innerHTML = "⏸ 暂停预览";
+            } else {
+                audio.pause();
+                cancelAnimationFrame(animationId);
+                document.getElementById('previewBtn').innerHTML = "▶ 仅播放/预览";
+            }
+        }
+
+        function toggleRecording() {
+            if (audio.src === "") return alert("请先上传音频文件");
+            if (lyrics.length === 0) return alert("请先上传LRC文件");
+
+            const btn = document.getElementById('recordBtn');
+            const btnText = document.getElementById('recordBtnText');
+            const dot = document.getElementById('recordDot');
+            const downloadLink = document.getElementById('downloadLink');
+
+            if (mediaRecorder && mediaRecorder.state === 'recording') {
+                mediaRecorder.stop();
+                audio.pause();
+                cancelAnimationFrame(animationId);
+                btnText.innerText = "🎥 开始录制视频";
+                btn.classList.remove('bg-gray-600');
+                btn.classList.add('bg-rose-600');
+                dot.classList.add('hidden');
+                document.getElementById('statusText').innerText = "录制完成，正在处理...";
+            } else {
+                initAudioContext();
+                const canvasStream = canvas.captureStream(30); 
+                const audioStream = dest.stream;
+                const combinedStream = new MediaStream([...canvasStream.getVideoTracks(), ...audioStream.getAudioTracks()]);
+
+                try {
+                    mediaRecorder = new MediaRecorder(combinedStream, { mimeType: 'video/webm;codecs=vp9,opus' });
+                } catch (e) {
+                    mediaRecorder = new MediaRecorder(combinedStream, { mimeType: 'video/webm;codecs=vp8,opus' });
+                }
+
+                recordedChunks = [];
+                mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) recordedChunks.push(e.data); };
+                mediaRecorder.onstop = () => {
+                    const blob = new Blob(recordedChunks, { type: 'video/webm' });
+                    const url = URL.createObjectURL(blob);
+                    downloadLink.href = url;
+                    downloadLink.download = `lyric_video_${Date.now()}.webm`;
+                    downloadLink.classList.remove('hidden');
+                    downloadLink.innerText = "⬇️ 下载生成的视频 (.webm)";
+                    document.getElementById('statusText').innerText = "视频已生成，请点击下载";
+                };
+
+                audio.currentTime = 0;
+                smoothScrollIndex = 0; // 重置滚动位置
+                audio.play();
+                drawFrame();
+                mediaRecorder.start();
+
+                btnText.innerText = "⏹ 停止录制 (保存)";
+                btn.classList.remove('bg-rose-600');
+                btn.classList.add('bg-gray-600');
+                dot.classList.remove('hidden');
+                downloadLink.classList.add('hidden');
+                document.getElementById('statusText').innerText = "🔴 正在录制... 请耐心等待歌曲播放";
+            }
+        }
+    </script>
+</body>
+</html>
