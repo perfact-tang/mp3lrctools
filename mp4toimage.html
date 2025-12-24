@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>视频逐帧分析与截图工具</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .custom-shadow {
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+        }
+        body {
+            background-color: #f8fafc;
+        }
+        canvas {
+            display: none;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col items-center p-4 md:p-8">
+
+    <div class="max-w-5xl w-full bg-white rounded-2xl p-6 custom-shadow">
+        <header class="mb-6 text-center">
+            <h1 class="text-3xl font-bold text-gray-800">视频逐帧分析器</h1>
+            <p class="text-gray-500 mt-2">支持逐帧查看、倍速控制及截图下载</p>
+        </header>
+
+        <!-- 上传区域 -->
+        <div id="dropZone" class="border-2 border-dashed border-blue-200 rounded-xl p-10 text-center cursor-pointer hover:bg-blue-50 transition-colors mb-6">
+            <input type="file" id="fileInput" class="hidden" accept="video/*">
+            <div id="uploadPrompt">
+                <div class="text-blue-500 mb-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                    </svg>
+                </div>
+                <p class="text-lg font-medium text-gray-700">点击或拖拽视频文件到此处</p>
+                <p class="text-sm text-gray-400 mt-1">支持 MP4, WebM, OGG 等格式</p>
+            </div>
+        </div>
+
+        <!-- 视频展示区 -->
+        <div id="videoContainer" class="hidden space-y-4">
+            <div class="relative bg-black rounded-lg overflow-hidden aspect-video flex items-center justify-center">
+                <video id="videoPlayer" class="w-full h-full"></video>
+            </div>
+
+            <!-- 进度条 -->
+            <div class="flex items-center space-x-3 text-sm font-mono text-gray-600">
+                <span id="currentTime">00:00:00.000</span>
+                <input type="range" id="progressBar" class="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600" min="0" value="0" step="0.001">
+                <span id="duration">00:00:00.000</span>
+            </div>
+
+            <!-- 控制面板 -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-50 p-4 rounded-xl">
+                <!-- 播放控制 -->
+                <div class="flex flex-wrap items-center justify-center md:justify-start gap-2">
+                    <button id="btnPrevFrame" class="p-2 bg-white border border-gray-200 rounded-lg hover:bg-gray-100 transition shadow-sm" title="上一帧 (左箭头)">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m11 17-5-5 5-5"/><path d="m18 17-5-5 5-5"/></svg>
+                    </button>
+                    <button id="btnTogglePlay" class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition shadow-md font-bold" title="播放/暂停 (空格)">
+                        播放
+                    </button>
+                    <button id="btnNextFrame" class="p-2 bg-white border border-gray-200 rounded-lg hover:bg-gray-100 transition shadow-sm" title="下一帧 (右箭头)">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 17 5-5-5-5"/><path d="m13 17 5-5-5-5"/></svg>
+                    </button>
+                    
+                    <div class="h-6 w-px bg-gray-300 mx-2"></div>
+
+                    <select id="playbackRate" class="bg-white border border-gray-200 rounded-lg px-2 py-1 text-sm outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="0.25">0.25x 慢速</option>
+                        <option value="0.5">0.5x</option>
+                        <option value="1" selected>1.0x 正常</option>
+                        <option value="1.5">1.5x</option>
+                        <option value="2">2.0x 快速</option>
+                        <option value="4">4.0x</option>
+                    </select>
+                </div>
+
+                <!-- 工具控制 -->
+                <div class="flex items-center justify-center md:justify-end gap-2">
+                    <button id="btnDownloadFrame" class="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition shadow-md">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+                        <span>保存当前帧</span>
+                    </button>
+                    <button id="btnReset" class="p-2 text-gray-500 hover:text-red-500 transition" title="重新上传">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- 提示卡片 -->
+            <div class="bg-blue-50 border-l-4 border-blue-400 p-4 rounded text-sm text-blue-700">
+                <p><strong>快捷键提示：</strong></p>
+                <ul class="list-disc ml-5 mt-1">
+                    <li>使用 <kbd class="px-1 bg-white border rounded shadow-sm font-bold">←</kbd> 和 <kbd class="px-1 bg-white border rounded shadow-sm font-bold">→</kbd> 箭头按键逐帧移动。</li>
+                    <li>使用 <kbd class="px-1 bg-white border rounded shadow-sm font-bold">空格</kbd> 播放或暂停视频。</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- 用于截图的隐藏 Canvas -->
+    <canvas id="screenshotCanvas"></canvas>
+
+    <!-- 简单的 Toast 通知 -->
+    <div id="toast" class="fixed bottom-10 left-1/2 -translate-x-1/2 px-6 py-3 bg-gray-800 text-white rounded-full opacity-0 pointer-events-none transition-opacity duration-300 shadow-xl">
+        消息提示
+    </div>
+
+    <script>
+        const fileInput = document.getElementById('fileInput');
+        const dropZone = document.getElementById('dropZone');
+        const videoPlayer = document.getElementById('videoPlayer');
+        const videoContainer = document.getElementById('videoContainer');
+        const uploadPrompt = document.getElementById('uploadPrompt');
+        
+        const btnTogglePlay = document.getElementById('btnTogglePlay');
+        const btnPrevFrame = document.getElementById('btnPrevFrame');
+        const btnNextFrame = document.getElementById('btnNextFrame');
+        const btnDownloadFrame = document.getElementById('btnDownloadFrame');
+        const playbackRateSelect = document.getElementById('playbackRate');
+        const btnReset = document.getElementById('btnReset');
+        
+        const progressBar = document.getElementById('progressBar');
+        const currentTimeDisplay = document.getElementById('currentTime');
+        const durationDisplay = document.getElementById('duration');
+        
+        const canvas = document.getElementById('screenshotCanvas');
+        const ctx = canvas.getContext('2d');
+        const toast = document.getElementById('toast');
+
+        // 每帧大约的时间量 (假设 30fps)
+        const frameTime = 1 / 30;
+
+        // --- 初始化与文件处理 ---
+
+        dropZone.addEventListener('click', () => fileInput.click());
+
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('bg-blue-100');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('bg-blue-100');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('bg-blue-100');
+            const file = e.dataTransfer.files[0];
+            if (file && file.type.startsWith('video/')) {
+                handleFile(file);
+            }
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files[0]) handleFile(e.target.files[0]);
+        });
+
+        function handleFile(file) {
+            const url = URL.createObjectURL(file);
+            videoPlayer.src = url;
+            videoContainer.classList.remove('hidden');
+            dropZone.classList.add('hidden');
+            showToast('视频加载成功');
+        }
+
+        btnReset.addEventListener('click', () => {
+            videoPlayer.pause();
+            videoPlayer.src = "";
+            videoContainer.classList.add('hidden');
+            dropZone.classList.remove('hidden');
+            fileInput.value = "";
+        });
+
+        // --- 播放器控制 ---
+
+        videoPlayer.addEventListener('loadedmetadata', () => {
+            progressBar.max = videoPlayer.duration;
+            durationDisplay.textContent = formatTime(videoPlayer.duration);
+            currentTimeDisplay.textContent = formatTime(0);
+        });
+
+        videoPlayer.addEventListener('timeupdate', () => {
+            if (!progressBar.dragging) {
+                progressBar.value = videoPlayer.currentTime;
+                currentTimeDisplay.textContent = formatTime(videoPlayer.currentTime);
+            }
+        });
+
+        btnTogglePlay.addEventListener('click', togglePlay);
+
+        function togglePlay() {
+            if (videoPlayer.paused) {
+                videoPlayer.play();
+                btnTogglePlay.textContent = "暂停";
+                btnTogglePlay.classList.replace('bg-blue-600', 'bg-orange-600');
+            } else {
+                videoPlayer.pause();
+                btnTogglePlay.textContent = "播放";
+                btnTogglePlay.classList.replace('bg-orange-600', 'bg-blue-600');
+            }
+        }
+
+        playbackRateSelect.addEventListener('change', (e) => {
+            videoPlayer.playbackRate = parseFloat(e.target.value);
+        });
+
+        btnNextFrame.addEventListener('click', () => {
+            videoPlayer.pause();
+            videoPlayer.currentTime = Math.min(videoPlayer.duration, videoPlayer.currentTime + frameTime);
+            updatePlayButtonState();
+        });
+
+        btnPrevFrame.addEventListener('click', () => {
+            videoPlayer.pause();
+            videoPlayer.currentTime = Math.max(0, videoPlayer.currentTime - frameTime);
+            updatePlayButtonState();
+        });
+
+        function updatePlayButtonState() {
+            btnTogglePlay.textContent = "播放";
+            btnTogglePlay.classList.replace('bg-orange-600', 'bg-blue-600');
+        }
+
+        // 进度条交互
+        progressBar.addEventListener('mousedown', () => progressBar.dragging = true);
+        window.addEventListener('mouseup', () => progressBar.dragging = false);
+        progressBar.addEventListener('input', () => {
+            videoPlayer.currentTime = progressBar.value;
+            currentTimeDisplay.textContent = formatTime(videoPlayer.currentTime);
+        });
+
+        // --- 截图下载 ---
+
+        btnDownloadFrame.addEventListener('click', () => {
+            // 设置 canvas 尺寸与视频一致
+            canvas.width = videoPlayer.videoWidth;
+            canvas.height = videoPlayer.videoHeight;
+            
+            // 绘制当前帧
+            ctx.drawImage(videoPlayer, 0, 0, canvas.width, canvas.height);
+            
+            // 导出并下载
+            const dataURL = canvas.toDataURL('image/png');
+            const link = document.createElement('a');
+            const timestamp = videoPlayer.currentTime.toFixed(3).replace('.', '-');
+            link.download = `frame_at_${timestamp}.png`;
+            link.href = dataURL;
+            link.click();
+            
+            showToast('已保存当前帧图片');
+        });
+
+        // --- 辅助功能 ---
+
+        function formatTime(seconds) {
+            const h = Math.floor(seconds / 3600);
+            const m = Math.floor((seconds % 3600) / 60);
+            const s = Math.floor(seconds % 60);
+            const ms = Math.floor((seconds % 1) * 1000);
+            return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}.${ms.toString().padStart(3, '0')}`;
+        }
+
+        function showToast(msg) {
+            toast.textContent = msg;
+            toast.classList.remove('opacity-0');
+            setTimeout(() => {
+                toast.classList.add('opacity-0');
+            }, 2000);
+        }
+
+        // --- 键盘快捷键 ---
+
+        window.addEventListener('keydown', (e) => {
+            if (videoContainer.classList.contains('hidden')) return;
+
+            switch(e.key) {
+                case "ArrowRight":
+                    e.preventDefault();
+                    btnNextFrame.click();
+                    break;
+                case "ArrowLeft":
+                    e.preventDefault();
+                    btnPrevFrame.click();
+                    break;
+                case " ":
+                    e.preventDefault();
+                    togglePlay();
+                    break;
+            }
+        });
+
+    </script>
+</body>
+</html>
