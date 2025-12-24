@@ -1,0 +1,721 @@
+
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web 图片编辑器</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .cursor-nwse-resize {
+            cursor: nwse-resize;
+        }
+
+        .cursor-nesw-resize {
+            cursor: nesw-resize;
+        }
+
+        .cursor-move {
+            cursor: move;
+        }
+
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+
+        /* 编辑器背景：深色，突出白色画布 */
+        .editor-bg {
+            background-color: #374151;
+            /* gray-700 */
+            background-image:
+                linear-gradient(45deg, #4b5563 25%, transparent 25%),
+                linear-gradient(-45deg, #4b5563 25%, transparent 25%),
+                linear-gradient(45deg, transparent 75%, #4b5563 75%),
+                linear-gradient(-45deg, transparent 75%, #4b5563 75%);
+            background-size: 20px 20px;
+            background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+        }
+    </style>
+</head>
+
+<body class="bg-gray-100 h-screen flex flex-col md:flex-row overflow-hidden font-sans text-gray-700">
+
+    <!-- 1. 左侧：上传区域 -->
+    <aside class="w-full md:w-64 bg-white border-r border-gray-200 flex flex-col shadow-sm z-20">
+        <div class="p-4 border-b border-gray-100">
+            <h2 class="text-lg font-bold text-gray-800"><i class="fas fa-images mr-2 text-blue-500"></i>素材库</h2>
+        </div>
+
+        <div class="p-4 flex-1 overflow-y-auto no-scrollbar">
+            <div id="dropZone"
+                class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-500 hover:bg-blue-50 transition-all cursor-pointer group flex flex-col items-center justify-center min-h-[150px]">
+                <input type="file" id="fileInput" class="hidden" accept="image/png, image/jpeg, image/gif">
+                <div class="mb-3 text-gray-400 group-hover:text-blue-500 transition-colors">
+                    <i class="fas fa-cloud-upload-alt text-4xl"></i>
+                </div>
+                <p class="text-sm font-medium text-gray-600">点击或拖放图片</p>
+                <p class="text-xs text-gray-400 mt-1">支持 JPG, PNG, GIF</p>
+            </div>
+
+            <div id="uploadStatus" class="hidden mt-4 p-3 bg-blue-50 text-blue-700 text-sm rounded flex items-center">
+                <i class="fas fa-spinner fa-spin mr-2"></i> 正在处理...
+            </div>
+
+            <div id="previewArea" class="mt-6 hidden">
+                <h3 class="text-xs font-semibold text-gray-400 uppercase mb-2">当前图层</h3>
+                <div class="relative group rounded-lg overflow-hidden border border-gray-200 shadow-sm">
+                    <img id="thumbnail" src="" class="w-full h-32 object-cover bg-gray-100">
+                    <div class="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-all"></div>
+                </div>
+                <div class="mt-2 text-xs text-gray-500 truncate" id="fileName">filename.jpg</div>
+                <p class="text-xs text-blue-500 mt-1"><i class="fas fa-info-circle"></i> 可在右侧画布中拖拽调整</p>
+            </div>
+        </div>
+    </aside>
+
+    <!-- 2. 中间：编辑操作区 -->
+    <main class="flex-1 relative flex flex-col bg-gray-800">
+        <!-- 顶部工具栏 -->
+        <div class="h-10 bg-white border-b border-gray-200 flex items-center px-4 justify-between select-none z-10">
+            <span class="text-xs text-gray-500">
+                <i class="fas fa-hand-paper mr-1"></i> 白色区域为输出画布 | 图片拖拽角点可<b>等比例缩放</b>
+            </span>
+            <div class="flex items-center space-x-2 text-xs text-gray-600">
+                <span>显示比例: </span>
+                <span id="zoomLevel">100%</span>
+            </div>
+        </div>
+
+        <!-- Canvas 容器 -->
+        <div id="canvasContainer" class="flex-1 overflow-hidden relative editor-bg flex items-center justify-center">
+            <canvas id="editorCanvas" class="shadow-2xl"></canvas>
+
+            <!-- 空状态提示 -->
+            <div id="emptyState"
+                class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-gray-300">
+                <i class="fas fa-layer-group text-6xl mb-4 opacity-30"></i>
+                <p class="text-lg opacity-60">请先上传图片</p>
+            </div>
+        </div>
+    </main>
+
+    <!-- 3. 右侧：控制面板 -->
+    <aside class="w-full md:w-72 bg-white border-l border-gray-200 flex flex-col z-20 shadow-sm">
+        <div class="p-4 border-b border-gray-100">
+            <h2 class="text-lg font-bold text-gray-800"><i class="fas fa-sliders-h mr-2 text-blue-500"></i>属性面板</h2>
+        </div>
+
+        <div class="p-5 space-y-6 flex-1 overflow-y-auto">
+            <!-- 画布尺寸控制 -->
+            <div class="bg-gray-50 p-3 rounded-lg border border-gray-100">
+                <h3 class="text-xs font-bold text-gray-700 uppercase mb-3 flex items-center">
+                    <i class="fas fa-crop-alt mr-1"></i> 画布尺寸 (输出大小)
+                </h3>
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="space-y-1">
+                        <label class="text-xs text-gray-500 block">宽度 (px)</label>
+                        <div class="relative">
+                            <input type="number" id="inputArtboardW"
+                                class="w-full pl-2 pr-6 py-1.5 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all font-mono"
+                                value="992">
+                            <span class="absolute right-2 top-1.5 text-xs text-gray-400">W</span>
+                        </div>
+                    </div>
+                    <div class="space-y-1">
+                        <label class="text-xs text-gray-500 block">高度 (px)</label>
+                        <div class="relative">
+                            <input type="number" id="inputArtboardH"
+                                class="w-full pl-2 pr-6 py-1.5 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all font-mono"
+                                value="558">
+                            <span class="absolute right-2 top-1.5 text-xs text-gray-400">H</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-3 flex space-x-2">
+                    <button onclick="setPreset(800, 800)"
+                        class="flex-1 text-xs bg-white border border-gray-200 hover:bg-blue-50 hover:border-blue-300 py-1 rounded transition-colors">1:1</button>
+                    <button onclick="setPreset(1200, 900)"
+                        class="flex-1 text-xs bg-white border border-gray-200 hover:bg-blue-50 hover:border-blue-300 py-1 rounded transition-colors">4:3</button>
+                    <button onclick="setPreset(992, 558)"
+                        class="flex-1 text-xs bg-white border border-gray-200 hover:bg-blue-50 hover:border-blue-300 py-1 rounded transition-colors">16:9</button>
+                </div>
+            </div>
+
+            <!-- 选中的图片信息 -->
+            <div id="imageControls" class="opacity-50 pointer-events-none transition-opacity">
+                <h3 class="text-xs font-bold text-gray-700 uppercase mb-3 flex items-center">
+                    <i class="fas fa-image mr-1"></i> 图片信息
+                </h3>
+                <div class="space-y-2 text-xs text-gray-500">
+                    <div class="flex justify-between">
+                        <span>缩放比例:</span>
+                        <span id="displayScale" class="font-mono text-gray-800">100%</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span>位置 (X, Y):</span>
+                        <span id="displayPos" class="font-mono text-gray-800">0, 0</span>
+                    </div>
+                </div>
+                <button id="btnCenterImg"
+                    class="mt-3 w-full bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 py-1.5 px-3 rounded text-xs flex items-center justify-center">
+                    <i class="fas fa-crosshairs mr-2"></i> 居中图片
+                </button>
+                <button id="btnFitImg"
+                    class="mt-2 w-full bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 py-1.5 px-3 rounded text-xs flex items-center justify-center">
+                    <i class="fas fa-compress-arrows-alt mr-2"></i> 适应画布
+                </button>
+            </div>
+        </div>
+
+        <!-- 底部生成按钮 -->
+        <div class="p-4 bg-gray-50 border-t border-gray-200">
+            <button id="btnGenerate"
+                class="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 px-4 rounded-lg shadow-lg hover:shadow-xl transition-all transform hover:-translate-y-0.5 font-bold flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed">
+                <i class="fas fa-download mr-2"></i> 生成并下载
+            </button>
+        </div>
+    </aside>
+
+    <!-- 消息提示 Toast -->
+    <div id="toast"
+        class="fixed bottom-5 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white px-6 py-3 rounded-full shadow-2xl opacity-0 pointer-events-none transition-opacity duration-300 z-50 text-sm">
+        Message here
+    </div>
+
+    <!-- JavaScript 逻辑 -->
+    <script>
+        // --- 状态管理 ---
+        const state = {
+            canvas: null,
+            ctx: null,
+            container: null,
+
+            // 画布(Artboard)设定 - 这是输出尺寸
+            artboard: {
+                w: 992,
+                h: 558
+            },
+
+            // 图片对象
+            imgObj: null, // { source, x, y, w, h, originalRatio }
+
+            // 视图转换 (将Artboard适配到屏幕)
+            view: {
+                scale: 1, // 屏幕像素 / 画布像素
+                offsetX: 0, // 画布中心在屏幕Canvas中的X偏移
+                offsetY: 0
+            },
+
+            // 交互状态
+            isDragging: false,
+            isResizing: false,
+            resizeHandle: null, // 'tl', 'tr', 'bl', 'br'
+
+            // 鼠标交互辅助
+            startMouseX: 0,
+            startMouseY: 0,
+            initialImgState: {}
+        };
+
+        const HANDLE_SIZE = 8;
+        const HANDLE_HIT_BUFFER = 10;
+
+        // --- DOM 元素 ---
+        const els = {
+            dropZone: document.getElementById('dropZone'),
+            fileInput: document.getElementById('fileInput'),
+            editorCanvas: document.getElementById('editorCanvas'),
+            canvasContainer: document.getElementById('canvasContainer'),
+            inputs: {
+                artW: document.getElementById('inputArtboardW'),
+                artH: document.getElementById('inputArtboardH'),
+            },
+            imgControls: document.getElementById('imageControls'),
+            displayScale: document.getElementById('displayScale'),
+            displayPos: document.getElementById('displayPos'),
+            btnCenterImg: document.getElementById('btnCenterImg'),
+            btnFitImg: document.getElementById('btnFitImg'),
+
+            uploadStatus: document.getElementById('uploadStatus'),
+            previewArea: document.getElementById('previewArea'),
+            thumbnail: document.getElementById('thumbnail'),
+            fileName: document.getElementById('fileName'),
+            emptyState: document.getElementById('emptyState'),
+            btnGenerate: document.getElementById('btnGenerate'),
+            toast: document.getElementById('toast'),
+            zoomLevel: document.getElementById('zoomLevel')
+        };
+
+        // --- 初始化 ---
+        function init() {
+            state.canvas = els.editorCanvas;
+            state.ctx = state.canvas.getContext('2d');
+            state.container = els.canvasContainer;
+
+            // 初始适配
+            resizeViewport();
+            window.addEventListener('resize', () => {
+                resizeViewport();
+                draw();
+            });
+
+            setupEvents();
+
+            // 默认禁用生成
+            els.btnGenerate.disabled = true;
+        }
+
+        // 调整 Canvas DOM 元素的大小以填满容器 (Viewport)
+        function resizeViewport() {
+            const cw = state.container.clientWidth;
+            const ch = state.container.clientHeight;
+            state.canvas.width = cw;
+            state.canvas.height = ch;
+            updateViewTransform();
+        }
+
+        // 计算视图变换矩阵，使Artboard居中并适应屏幕
+        function updateViewTransform() {
+            const viewportW = state.canvas.width;
+            const viewportH = state.canvas.height;
+            const artW = state.artboard.w;
+            const artH = state.artboard.h;
+
+            // 留出 40px 的边距
+            const margin = 40;
+            const availableW = viewportW - margin * 2;
+            const availableH = viewportH - margin * 2;
+
+            // 计算缩放比例
+            const scaleW = availableW / artW;
+            const scaleH = availableH / artH;
+            state.view.scale = Math.min(scaleW, scaleH, 2); // 最大放大2倍，防止太小画布时过大
+
+            // 如果计算出的比例太小（例如极长图片），设置最小可见比例
+            if (state.view.scale < 0.1) state.view.scale = 0.1;
+
+            // 居中偏移
+            state.view.offsetX = viewportW / 2;
+            state.view.offsetY = viewportH / 2;
+
+            els.zoomLevel.innerText = Math.round(state.view.scale * 100) + "%";
+        }
+
+        // --- 绘图逻辑 ---
+        function draw() {
+            const { ctx, canvas, artboard, imgObj, view } = state;
+
+            // 1. 清空视口 (深色背景已由CSS处理，但这里需要清理内容)
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            ctx.save();
+
+            // 2. 应用视图变换: 移动到中心 -> 缩放 -> 移动回Artboard原点
+            ctx.translate(view.offsetX, view.offsetY);
+            ctx.scale(view.scale, view.scale);
+            ctx.translate(-artboard.w / 2, -artboard.h / 2);
+
+            // 3. 绘制 Artboard (白色背景 + 阴影)
+            // 阴影
+            ctx.shadowColor = "rgba(0,0,0,0.5)";
+            ctx.shadowBlur = 20 / view.scale; // 保持阴影视觉大小一致
+            ctx.shadowOffsetX = 0;
+            ctx.shadowOffsetY = 5 / view.scale;
+            ctx.fillStyle = "#ffffff";
+            ctx.fillRect(0, 0, artboard.w, artboard.h);
+
+            // 取消阴影，避免影响后续元素
+            ctx.shadowColor = "transparent";
+            ctx.shadowBlur = 0;
+            ctx.shadowOffsetY = 0;
+
+            // 4. 绘制图片
+            if (imgObj) {
+                // 绘制图片本身
+                ctx.drawImage(imgObj.source, imgObj.x, imgObj.y, imgObj.w, imgObj.h);
+
+                // --- 新增: 遮罩层 (实现"画布在前"效果，超出区域变暗) ---
+                ctx.fillStyle = "rgba(0, 0, 0, 0.6)"; // 黑色半透明
+                ctx.beginPath();
+                // 外围大矩形 (确保覆盖足够大)
+                const bigVal = 100000;
+                ctx.rect(-bigVal, -bigVal, bigVal * 2, bigVal * 2);
+                // 内部矩形 (Artboard区域，作为挖空部分)
+                ctx.rect(0, 0, artboard.w, artboard.h);
+                // 填充规则: evenodd (重叠区域挖空)
+                ctx.fill("evenodd");
+                // ----------------------------------------------------
+
+                // 绘制选中框 (蓝色)
+                ctx.strokeStyle = "#3b82f6";
+                ctx.lineWidth = 2 / view.scale; // 线条保持1px视觉宽度
+                ctx.strokeRect(imgObj.x, imgObj.y, imgObj.w, imgObj.h);
+
+                // 绘制控制手柄
+                // 手柄需要保持视觉大小一致，不随缩放改变太多，所以这里需要除以scale计算实际坐标大小
+                const visualHandleSize = HANDLE_SIZE / view.scale;
+
+                drawHandle(ctx, imgObj.x, imgObj.y, visualHandleSize); // TL
+                drawHandle(ctx, imgObj.x + imgObj.w, imgObj.y, visualHandleSize); // TR
+                drawHandle(ctx, imgObj.x, imgObj.y + imgObj.h, visualHandleSize); // BL
+                drawHandle(ctx, imgObj.x + imgObj.w, imgObj.y + imgObj.h, visualHandleSize); // BR
+
+                // 更新UI信息
+                updateImageInfoUI();
+            } else {
+                // 在Artboard中间画一些指导线或文字
+                ctx.fillStyle = "#e5e7eb";
+                ctx.font = `${20 / view.scale}px sans-serif`;
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText("输出区域", artboard.w / 2, artboard.h / 2);
+            }
+
+            ctx.restore();
+
+            // 5. 绘制 Artboard 外部遮罩 (可选，模仿Photoshop效果，把画布外变暗)
+            // 这里为了简洁，暂不实现复杂的遮罩，因为背景已经是深色
+        }
+
+        function drawHandle(ctx, x, y, size) {
+            ctx.fillStyle = "#ffffff";
+            ctx.strokeStyle = "#2563eb";
+            ctx.lineWidth = 2 / state.view.scale;
+            ctx.beginPath();
+            ctx.rect(x - size / 2, y - size / 2, size, size);
+            ctx.fill();
+            ctx.stroke();
+        }
+
+        // --- 坐标转换系统 ---
+        // 将屏幕(鼠标)坐标转换为 Artboard 内部坐标
+        function getArtboardPos(clientX, clientY) {
+            const rect = state.canvas.getBoundingClientRect();
+            const viewportX = clientX - rect.left;
+            const viewportY = clientY - rect.top;
+
+            // 逆向变换
+            const x = (viewportX - state.view.offsetX) / state.view.scale + state.artboard.w / 2;
+            const y = (viewportY - state.view.offsetY) / state.view.scale + state.artboard.h / 2;
+
+            return { x, y };
+        }
+
+        // 检测鼠标是否点中了手柄
+        function getHitHandle(artX, artY) {
+            if (!state.imgObj) return null;
+            const { x, y, w, h } = state.imgObj;
+
+            // 增加点击判定范围
+            const hitBuffer = HANDLE_HIT_BUFFER / state.view.scale;
+
+            if (Math.abs(artX - x) < hitBuffer && Math.abs(artY - y) < hitBuffer) return 'tl';
+            if (Math.abs(artX - (x + w)) < hitBuffer && Math.abs(artY - y) < hitBuffer) return 'tr';
+            if (Math.abs(artX - x) < hitBuffer && Math.abs(artY - (y + h)) < hitBuffer) return 'bl';
+            if (Math.abs(artX - (x + w)) < hitBuffer && Math.abs(artY - (y + h)) < hitBuffer) return 'br';
+
+            return null;
+        }
+
+        // --- 事件处理 ---
+        function setupEvents() {
+            // 画布交互
+            const cvs = state.canvas;
+            cvs.addEventListener('mousedown', onMouseDown);
+            window.addEventListener('mousemove', onMouseMove);
+            window.addEventListener('mouseup', onMouseUp);
+
+            // 触摸兼容
+            cvs.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                const t = e.touches[0];
+                const me = new MouseEvent('mousedown', { clientX: t.clientX, clientY: t.clientY });
+                cvs.dispatchEvent(me);
+            }, { passive: false });
+
+            // 文件上传
+            els.dropZone.addEventListener('click', () => els.fileInput.click());
+            els.fileInput.addEventListener('change', (e) => loadFile(e.target.files[0]));
+
+            // 拖放文件
+            els.dropZone.addEventListener('dragover', (e) => { e.preventDefault(); els.dropZone.classList.add('bg-blue-50', 'border-blue-500'); });
+            els.dropZone.addEventListener('dragleave', (e) => { e.preventDefault(); els.dropZone.classList.remove('bg-blue-50', 'border-blue-500'); });
+            els.dropZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                els.dropZone.classList.remove('bg-blue-50', 'border-blue-500');
+                if (e.dataTransfer.files.length) loadFile(e.dataTransfer.files[0]);
+            });
+
+            // 画布尺寸输入
+            const updateArtboard = () => {
+                const w = parseInt(els.inputs.artW.value) || 100;
+                const h = parseInt(els.inputs.artH.value) || 100;
+                state.artboard.w = w;
+                state.artboard.h = h;
+                updateViewTransform(); // 尺寸变了，重新适配视图
+                draw();
+            };
+            els.inputs.artW.addEventListener('input', updateArtboard);
+            els.inputs.artH.addEventListener('input', updateArtboard);
+
+            // 图片控制按钮
+            els.btnCenterImg.addEventListener('click', () => {
+                if (!state.imgObj) return;
+                state.imgObj.x = (state.artboard.w - state.imgObj.w) / 2;
+                state.imgObj.y = (state.artboard.h - state.imgObj.h) / 2;
+                draw();
+            });
+            els.btnFitImg.addEventListener('click', fitImageToArtboard);
+
+            // 生成
+            els.btnGenerate.addEventListener('click', generateImage);
+        }
+
+        function loadFile(file) {
+            if (!file || !file.type.match('image.*')) {
+                showToast('请上传图片文件', 'error');
+                return;
+            }
+
+            els.uploadStatus.classList.remove('hidden');
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const img = new Image();
+                img.onload = () => {
+                    // 初始化图片对象
+                    state.imgObj = {
+                        source: img,
+                        w: img.width,
+                        h: img.height,
+                        x: 0,
+                        y: 0,
+                        originalRatio: img.width / img.height
+                    };
+
+                    // 默认适应画布
+                    fitImageToArtboard();
+
+                    // UI 更新
+                    els.uploadStatus.classList.add('hidden');
+                    els.previewArea.classList.remove('hidden');
+                    els.thumbnail.src = e.target.result;
+                    els.fileName.textContent = file.name;
+                    els.emptyState.classList.add('hidden');
+                    els.btnGenerate.disabled = false;
+                    els.imgControls.classList.remove('opacity-50', 'pointer-events-none');
+
+                    draw();
+                    showToast('图片已添加');
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function fitImageToArtboard() {
+            if (!state.imgObj) return;
+            const { w: aw, h: ah } = state.artboard;
+            const ratio = state.imgObj.originalRatio;
+
+            // 简单的适应逻辑：缩放到画布的80%
+            let nw = aw * 0.8;
+            let nh = nw / ratio;
+
+            if (nh > ah * 0.8) {
+                nh = ah * 0.8;
+                nw = nh * ratio;
+            }
+
+            state.imgObj.w = nw;
+            state.imgObj.h = nh;
+            state.imgObj.x = (aw - nw) / 2;
+            state.imgObj.y = (ah - nh) / 2;
+
+            draw();
+        }
+
+        // --- 鼠标操作逻辑 ---
+        function onMouseDown(e) {
+            if (!state.imgObj) return;
+
+            const pos = getArtboardPos(e.clientX, e.clientY);
+            const { x, y, w, h } = state.imgObj;
+
+            // 1. 检查手柄
+            const handle = getHitHandle(pos.x, pos.y);
+            if (handle) {
+                state.isResizing = true;
+                state.resizeHandle = handle;
+            } else if (pos.x >= x && pos.x <= x + w && pos.y >= y && pos.y <= y + h) {
+                // 2. 检查图片拖拽
+                state.isDragging = true;
+                state.canvas.style.cursor = 'move';
+            } else {
+                return; // 点击了空白处
+            }
+
+            state.startMouseX = pos.x;
+            state.startMouseY = pos.y;
+            // 记录初始状态用于计算
+            state.initialImgState = { ...state.imgObj };
+        }
+
+        function onMouseMove(e) {
+            if (!state.imgObj) return;
+
+            const pos = getArtboardPos(e.clientX, e.clientY);
+
+            // 更新光标
+            if (!state.isDragging && !state.isResizing) {
+                const handle = getHitHandle(pos.x, pos.y);
+                if (handle) {
+                    state.canvas.style.cursor = (handle === 'tl' || handle === 'br') ? 'nwse-resize' : 'nesw-resize';
+                } else if (pos.x >= state.imgObj.x && pos.x <= state.imgObj.x + state.imgObj.w &&
+                    pos.y >= state.imgObj.y && pos.y <= state.imgObj.y + state.imgObj.h) {
+                    state.canvas.style.cursor = 'move';
+                } else {
+                    state.canvas.style.cursor = 'default';
+                }
+            }
+
+            if (!state.isDragging && !state.isResizing) return;
+
+            const dx = pos.x - state.startMouseX;
+            const dy = pos.y - state.startMouseY;
+            const init = state.initialImgState;
+
+            if (state.isDragging) {
+                state.imgObj.x = init.x + dx;
+                state.imgObj.y = init.y + dy;
+            } else if (state.isResizing) {
+                // 等比例缩放逻辑
+                // 1. 根据鼠标移动决定主要变化轴（根据手柄不同）
+                // 2. 强制应用宽高比
+
+                let newW = init.w;
+                let newH = init.h;
+                let newX = init.x;
+                let newY = init.y;
+
+                const ratio = init.originalRatio;
+
+                // 简单的等比例计算方法：
+                // 计算新的宽度，然后算出高度，或者反之
+                // 这里我们基于X轴的变化来主导 (也可以取最大值)
+
+                if (state.resizeHandle === 'br') {
+                    // 右下角：改变 W 和 H
+                    newW = init.w + dx;
+                    newH = newW / ratio; // 强制比例
+                } else if (state.resizeHandle === 'bl') {
+                    // 左下角：改变 X, W, H
+                    newW = init.w - dx;
+                    newH = newW / ratio;
+                    newX = init.x + (init.w - newW); // 修正X位置以保持右边不动
+                } else if (state.resizeHandle === 'tr') {
+                    // 右上角
+                    newW = init.w + dx;
+                    newH = newW / ratio;
+                    newY = init.y + (init.h - newH); // 修正Y位置以保持底边不动
+                } else if (state.resizeHandle === 'tl') {
+                    // 左上角
+                    newW = init.w - dx;
+                    newH = newW / ratio;
+                    newX = init.x + (init.w - newW);
+                    newY = init.y + (init.h - newH);
+                }
+
+                // 最小尺寸限制
+                if (newW > 20 && newH > 20) {
+                    state.imgObj.w = newW;
+                    state.imgObj.h = newH;
+                    state.imgObj.x = newX;
+                    state.imgObj.y = newY;
+                }
+            }
+
+            requestAnimationFrame(draw);
+        }
+
+        function onMouseUp() {
+            state.isDragging = false;
+            state.isResizing = false;
+            state.resizeHandle = null;
+        }
+
+        // --- 辅助UI更新 ---
+        function updateImageInfoUI() {
+            if (!state.imgObj) return;
+            const scalePct = Math.round((state.imgObj.w / state.imgObj.source.width) * 100);
+            els.displayScale.innerText = `${scalePct}%`;
+            els.displayPos.innerText = `${Math.round(state.imgObj.x)}, ${Math.round(state.imgObj.y)}`;
+        }
+
+        // 预设尺寸按钮
+        window.setPreset = function (w, h) {
+            els.inputs.artW.value = w;
+            els.inputs.artH.value = h;
+            state.artboard.w = w;
+            state.artboard.h = h;
+            updateViewTransform();
+            draw();
+            showToast(`画布已调整为 ${w} x ${h}`);
+        }
+
+        // --- 生成下载 ---
+        function generateImage() {
+            if (!state.imgObj) return;
+
+            // 1. 创建离屏Canvas，尺寸等于Artboard尺寸
+            const outCanvas = document.createElement('canvas');
+            outCanvas.width = state.artboard.w;
+            outCanvas.height = state.artboard.h;
+            const ctx = outCanvas.getContext('2d');
+
+            // 2. 绘制背景 (透明或白色？通常生成JPG需要白色，PNG可以是透明)
+            // 这里为了所见即所得，填充白色背景（因为编辑器里是白色）
+            // 如果需要透明背景，注释掉下面两行
+            // ctx.fillStyle = "#ffffff";
+            // ctx.fillRect(0, 0, outCanvas.width, outCanvas.height);
+
+            // 3. 绘制图片
+            const img = state.imgObj;
+            ctx.drawImage(img.source, img.x, img.y, img.w, img.h);
+
+            // 4. 下载
+            try {
+                const link = document.createElement('a');
+                link.download = `canvas_export_${Date.now()}.png`;
+                link.href = outCanvas.toDataURL('image/png');
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                showToast('下载成功');
+            } catch (e) {
+                console.error(e);
+                showToast('导出失败', 'error');
+            }
+        }
+
+        function showToast(msg, type = 'success') {
+            const toast = els.toast;
+            toast.textContent = msg;
+            toast.className = `fixed bottom-5 left-1/2 transform -translate-x-1/2 px-6 py-3 rounded-full shadow-2xl transition-opacity duration-300 z-50 text-sm ${type === 'error' ? 'bg-red-600 text-white' : 'bg-gray-800 text-white'}`;
+
+            setTimeout(() => {
+                toast.classList.add('opacity-0', 'pointer-events-none');
+            }, 3000);
+        }
+
+        window.addEventListener('load', init);
+    </script>
+</body>
+
+</html>
