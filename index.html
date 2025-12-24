@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>工具导航目录 | Toolbox Directory</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#3b82f6',
+                        secondary: '#64748b',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        .glass-effect {
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(10px);
+        }
+        .card-hover {
+            transition: all 0.3s ease;
+        }
+        .card-hover:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen flex flex-col font-sans text-slate-800">
+
+    <!-- Navigation / Header -->
+    <header class="glass-effect sticky top-0 z-50 border-b border-gray-200 shadow-sm">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-16">
+                <div class="flex items-center gap-3">
+                    <div class="bg-primary/10 p-2 rounded-lg text-primary">
+                        <i class="fa-solid fa-toolbox text-xl"></i>
+                    </div>
+                    <h1 class="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600">
+                        在线工具箱
+                    </h1>
+                </div>
+                <div class="text-sm text-gray-500 hidden sm:block">
+                    高效 · 便捷 · 纯前端
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-grow max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 w-full">
+        
+        <!-- Search Section -->
+        <div class="max-w-2xl mx-auto mb-12 text-center">
+            <h2 class="text-3xl font-bold text-gray-900 mb-4">发现实用工具</h2>
+            <p class="text-gray-600 mb-8">浏览并使用我们精心制作的在线工具集</p>
+            
+            <div class="relative max-w-lg mx-auto">
+                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <i class="fa-solid fa-search text-gray-400"></i>
+                </div>
+                <input type="text" id="searchInput" 
+                    class="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-xl leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-2 focus:ring-primary focus:border-primary sm:text-sm shadow-sm transition duration-150 ease-in-out"
+                    placeholder="搜索工具名称或关键词..."
+                    aria-label="搜索工具">
+            </div>
+        </div>
+
+        <!-- Grid Container -->
+        <div id="toolsGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            <!-- Cards will be injected here by JS -->
+        </div>
+
+        <!-- Empty State (Hidden by default) -->
+        <div id="emptyState" class="hidden text-center py-12">
+            <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gray-100 mb-4">
+                <i class="fa-regular fa-folder-open text-gray-400 text-2xl"></i>
+            </div>
+            <h3 class="text-lg font-medium text-gray-900">未找到相关工具</h3>
+            <p class="mt-2 text-gray-500">尝试更换搜索关键词</p>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-white border-t border-gray-200 mt-auto">
+        <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+            <p class="text-center text-sm text-gray-500">
+                &copy; <script>document.write(new Date().getFullYear())</script> 工具箱目录. All rights reserved.
+            </p>
+        </div>
+    </footer>
+
+    <script>
+        // File Data Configuration
+        const tools = [
+            {
+                sortno: 1,
+                filename: 'imageresize.html',
+                title: 'Web 图片编辑器',
+                description: '在线调整图片大小、裁剪与编辑',
+                icon: 'fa-image',
+                color: 'text-pink-500',
+                bg: 'bg-pink-50'
+            },
+            {
+                sortno: 2,
+                filename: 'mp3tolrc.html',
+                title: '网页版 LRC 歌词制作器',
+                description: '在线制作和编辑LRC歌词文件',
+                icon: 'fa-music',
+                color: 'text-green-500',
+                bg: 'bg-green-50'
+            },
+            {
+                sortno: 3,
+                filename: 'lrctovideo.html',
+                title: '歌词视频生成器 (Pro版)',
+                description: '将LRC歌词转换为动态视频',
+                icon: 'fa-video',
+                color: 'text-purple-500',
+                bg: 'bg-purple-50'
+            },
+            {
+                sortno: 4,
+                filename: 'mp4toimage.html',
+                title: '视频逐帧分析与截图工具',
+                description: '视频逐帧查看与高清截图提取',
+                icon: 'fa-film',
+                color: 'text-blue-500',
+                bg: 'bg-blue-50'
+            },
+            {
+                sortno: 5,
+                filename: 'video2voice.html',
+                title: '极简音视频切割器',
+                description: '快速剪辑和处理音视频文件',
+                icon: 'fa-scissors',
+                color: 'text-orange-500',
+                bg: 'bg-orange-50'
+            }
+        ];
+
+        // DOM Elements
+        const grid = document.getElementById('toolsGrid');
+        const searchInput = document.getElementById('searchInput');
+        const emptyState = document.getElementById('emptyState');
+
+        // Function to create card HTML
+        function createCard(tool) {
+            return `
+                <a href="${tool.filename}" class="group block h-full">
+                    <div class="bg-white rounded-xl border border-gray-200 p-6 h-full card-hover relative overflow-hidden">
+                        <div class="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                            <i class="fa-solid ${tool.icon} text-6xl ${tool.color}"></i>
+                        </div>
+                        
+                        <div class="flex items-start justify-between mb-4">
+                            <div class="${tool.bg} ${tool.color} p-3 rounded-lg inline-flex items-center justify-center">
+                                <i class="fa-solid ${tool.icon} text-xl"></i>
+                            </div>
+                            <span class="text-xs font-mono text-gray-400 bg-gray-50 px-2 py-1 rounded border border-gray-100">
+                                .html
+                            </span>
+                        </div>
+                        
+                        <h3 class="text-lg font-bold text-gray-900 mb-2 group-hover:text-primary transition-colors">
+                            ${tool.title}
+                        </h3>
+                        
+                        <p class="text-sm text-gray-600 mb-4 line-clamp-2">
+                            ${tool.description}
+                        </p>
+                        
+                        <div class="flex items-center text-sm text-primary font-medium mt-auto">
+                            <span>打开工具</span>
+                            <i class="fa-solid fa-arrow-right ml-2 transform group-hover:translate-x-1 transition-transform"></i>
+                        </div>
+                    </div>
+                </a>
+            `;
+        }
+
+        // Render Function
+        function renderTools(filterText = '') {
+            const normalizedFilter = filterText.toLowerCase().trim();
+            
+            const filteredTools = tools.filter(tool => {
+                return tool.title.toLowerCase().includes(normalizedFilter) || 
+                       tool.filename.toLowerCase().includes(normalizedFilter) ||
+                       tool.description.toLowerCase().includes(normalizedFilter);
+            });
+
+            // Sort by sortno
+            filteredTools.sort((a, b) => (a.sortno || 0) - (b.sortno || 0));
+
+            grid.innerHTML = filteredTools.map(createCard).join('');
+            
+            if (filteredTools.length === 0) {
+                grid.classList.add('hidden');
+                emptyState.classList.remove('hidden');
+            } else {
+                grid.classList.remove('hidden');
+                emptyState.classList.add('hidden');
+            }
+        }
+
+        // Event Listeners
+        searchInput.addEventListener('input', (e) => {
+            renderTools(e.target.value);
+        });
+
+        // Initial Render
+        renderTools();
+    </script>
+</body>
+</html>
