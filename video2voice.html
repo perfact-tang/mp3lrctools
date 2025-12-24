@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>极简音视频切割器</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            background-color: #f8fafc;
+        }
+        .waveform-container {
+            position: relative;
+            width: 100%;
+            height: 160px;
+            background: #1e293b;
+            border-radius: 8px;
+            overflow: hidden;
+            cursor: crosshair;
+        }
+        canvas {
+            width: 100%;
+            height: 100%;
+        }
+        .selection-overlay {
+            position: absolute;
+            top: 0;
+            height: 100%;
+            background: rgba(59, 130, 246, 0.3);
+            border-left: 2px solid #3b82f6;
+            border-right: 2px solid #3b82f6;
+            pointer-events: none;
+        }
+        .play-head {
+            position: absolute;
+            top: 0;
+            width: 2px;
+            height: 100%;
+            background: #ef4444;
+            pointer-events: none;
+        }
+        .video-preview {
+            width: 100%;
+            max-height: 300px;
+            background: #000;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+        }
+        .custom-shadow {
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+    <div class="max-w-4xl mx-auto bg-white rounded-2xl p-6 custom-shadow">
+        <header class="mb-8 text-center">
+            <h1 class="text-3xl font-bold text-slate-800 mb-2">音频切割器</h1>
+            <p class="text-slate-500">上传视频或音频，自由截取并导出片段</p>
+        </header>
+
+        <!-- 文件上传区 -->
+        <div id="uploadArea" class="mb-8">
+            <label class="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-slate-300 rounded-lg cursor-pointer hover:bg-slate-50 transition-colors">
+                <div class="flex flex-col items-center justify-center pt-5 pb-6">
+                    <svg class="w-10 h-10 mb-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+                    <p class="mb-2 text-sm text-slate-500 font-semibold">点击或拖拽文件上传</p>
+                    <p class="text-xs text-slate-400">支持 MP3, WAV, MP4, WebM 等</p>
+                </div>
+                <input id="fileInput" type="file" class="hidden" accept="audio/*,video/*" />
+            </label>
+        </div>
+
+        <!-- 状态提示 -->
+        <div id="statusMsg" class="mb-4 text-center text-sm font-medium py-2 px-4 rounded bg-blue-50 text-blue-700 hidden">
+            正在处理中...
+        </div>
+
+        <!-- 编辑区 -->
+        <div id="editorSection" class="hidden">
+            <!-- 视频预览区 -->
+            <video id="videoPlayer" class="video-preview"></video>
+
+            <div class="waveform-container mb-4" id="waveformBox">
+                <canvas id="waveformCanvas"></canvas>
+                <div id="selectionOverlay" class="selection-overlay" style="left: 0; width: 100%;"></div>
+                <div id="playHead" class="play-head" style="left: 0;"></div>
+            </div>
+
+            <!-- 控制面板 -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- 时间输入控制 -->
+                <div class="space-y-4">
+                    <div class="flex items-center space-x-4">
+                        <div class="flex-1">
+                            <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">起始点 (秒)</label>
+                            <input type="number" id="startTime" step="0.01" min="0" value="0" class="w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none">
+                        </div>
+                        <div class="flex-1">
+                            <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">结束点 (秒)</label>
+                            <input type="number" id="endTime" step="0.01" min="0" value="0" class="w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none">
+                        </div>
+                    </div>
+                    <div class="text-xs text-slate-500 space-y-1">
+                        <p>💡 左键点击波形设置起点，右键点击设置终点。</p>
+                        <p id="fileDisplayInfo" class="font-medium text-slate-700"></p>
+                    </div>
+                </div>
+
+                <!-- 播放与倍速控制 -->
+                <div class="flex flex-col justify-end space-y-4">
+                    <div class="flex items-center justify-between bg-slate-100 p-2 rounded-lg">
+                        <div class="flex items-center space-x-3">
+                            <button id="btnPlayToggle" class="bg-blue-600 hover:bg-blue-700 text-white w-12 h-10 flex items-center justify-center rounded-md transition">
+                                <!-- Play Icon -->
+                                <svg id="iconPlay" class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"></path></svg>
+                                <!-- Pause Icon -->
+                                <svg id="iconPause" class="w-6 h-6 hidden" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"></path></svg>
+                            </button>
+                            <span class="text-sm font-mono text-slate-600" id="currentTimeDisplay">0.00s</span>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <span class="text-xs font-bold text-slate-500">倍速:</span>
+                            <select id="playbackRate" class="bg-white border border-slate-300 text-sm rounded-md px-2 py-1 outline-none">
+                                <option value="0.5">0.5x</option>
+                                <option value="0.75">0.75x</option>
+                                <option value="1.0" selected>1.0x</option>
+                                <option value="1.25">1.25x</option>
+                                <option value="1.5">1.5x</option>
+                                <option value="2.0">2.0x</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button id="btnExport" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-lg shadow-lg transform active:scale-95 transition-all">
+                        保存切割后的音频 (WAV)
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- 全局变量 ---
+        let audioContext;
+        let audioBuffer = null;
+        let startTime = 0;
+        let endTime = 0;
+        let duration = 0;
+        let isPlaying = false;
+
+        // --- DOM 元素 ---
+        const fileInput = document.getElementById('fileInput');
+        const statusMsg = document.getElementById('statusMsg');
+        const editorSection = document.getElementById('editorSection');
+        const videoPlayer = document.getElementById('videoPlayer');
+        const waveformCanvas = document.getElementById('waveformCanvas');
+        const selectionOverlay = document.getElementById('selectionOverlay');
+        const playHead = document.getElementById('playHead');
+        const startTimeInput = document.getElementById('startTime');
+        const endTimeInput = document.getElementById('endTime');
+        const btnPlayToggle = document.getElementById('btnPlayToggle');
+        const iconPlay = document.getElementById('iconPlay');
+        const iconPause = document.getElementById('iconPause');
+        const currentTimeDisplay = document.getElementById('currentTimeDisplay');
+        const btnExport = document.getElementById('btnExport');
+        const playbackRateSelect = document.getElementById('playbackRate');
+        const fileDisplayInfo = document.getElementById('fileDisplayInfo');
+
+        // --- 初始化 ---
+        function initAudio() {
+            if (!audioContext) {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            }
+        }
+
+        function showStatus(msg, isError = false) {
+            statusMsg.textContent = msg;
+            statusMsg.className = `mb-4 text-center text-sm font-medium py-2 px-4 rounded ${isError ? 'bg-red-50 text-red-700' : 'bg-blue-50 text-blue-700'}`;
+            statusMsg.classList.remove('hidden');
+        }
+
+        // --- 文件处理 ---
+        fileInput.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            initAudio();
+            showStatus("正在加载并解码文件...");
+            fileDisplayInfo.textContent = `当前文件: ${file.name}`;
+
+            try {
+                const objectURL = URL.createObjectURL(file);
+                videoPlayer.src = objectURL;
+                videoPlayer.load();
+
+                // 解码音频用于波形绘制
+                const arrayBuffer = await file.arrayBuffer();
+                audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+                duration = audioBuffer.duration;
+                
+                // 初始化选择范围
+                startTime = 0;
+                endTime = duration;
+                startTimeInput.value = 0;
+                endTimeInput.value = duration.toFixed(2);
+                
+                // 先显示编辑区再画波形（否则 canvas 的 offsetWidth 为 0）
+                editorSection.classList.remove('hidden');
+                drawWaveform();
+                updateUISelection();
+                statusMsg.classList.add('hidden');
+                document.getElementById('uploadArea').classList.add('hidden');
+            } catch (err) {
+                console.error(err);
+                showStatus("文件加载失败，请重试。", true);
+            }
+        });
+
+        // --- 波形绘制 ---
+        function drawWaveform() {
+            const canvas = waveformCanvas;
+            const ctx = canvas.getContext('2d');
+            const dpr = window.devicePixelRatio || 1;
+            
+            canvas.width = canvas.offsetWidth * dpr;
+            canvas.height = canvas.offsetHeight * dpr;
+            ctx.scale(dpr, dpr);
+
+            const width = canvas.offsetWidth;
+            const height = canvas.offsetHeight;
+            const data = audioBuffer.getChannelData(0);
+            const step = Math.ceil(data.length / width);
+            const amp = height / 2;
+
+            ctx.clearRect(0, 0, width, height);
+            ctx.beginPath();
+            ctx.strokeStyle = '#60a5fa';
+            ctx.lineWidth = 1;
+
+            for (let i = 0; i < width; i++) {
+                let min = 1.0;
+                let max = -1.0;
+                for (let j = 0; j < step; j++) {
+                    const datum = data[(i * step) + j];
+                    if (datum < min) min = datum;
+                    if (datum > max) max = datum;
+                }
+                ctx.moveTo(i, (1 + min) * amp);
+                ctx.lineTo(i, (1 + max) * amp);
+            }
+            ctx.stroke();
+        }
+
+        // --- UI 更新 ---
+        function updateUISelection() {
+            const width = document.getElementById('waveformBox').offsetWidth;
+            const startX = (startTime / duration) * width;
+            const endX = (endTime / duration) * width;
+            
+            selectionOverlay.style.left = startX + 'px';
+            selectionOverlay.style.width = (endX - startX) + 'px';
+            
+            startTimeInput.value = startTime.toFixed(2);
+            endTimeInput.value = endTime.toFixed(2);
+        }
+
+        // --- 交互逻辑 ---
+        document.getElementById('waveformBox').addEventListener('mousedown', (e) => {
+            if (!audioBuffer) return;
+            const rect = e.currentTarget.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const clickedTime = (x / rect.width) * duration;
+
+            if (e.button === 0) { // 左键：设为起点
+                if (clickedTime < endTime) {
+                    startTime = clickedTime;
+                }
+            } else if (e.button === 2) { // 右键：设为终点
+                if (clickedTime > startTime) {
+                    endTime = clickedTime;
+                }
+            }
+            updateUISelection();
+        });
+
+        document.getElementById('waveformBox').oncontextmenu = (e) => e.preventDefault();
+
+        // 输入框联动
+        startTimeInput.addEventListener('change', () => {
+            let val = parseFloat(startTimeInput.value);
+            if (val >= 0 && val < endTime) {
+                startTime = val;
+                updateUISelection();
+            } else {
+                startTimeInput.value = startTime.toFixed(2);
+            }
+        });
+
+        endTimeInput.addEventListener('change', () => {
+            let val = parseFloat(endTimeInput.value);
+            if (val > startTime && val <= duration) {
+                endTime = val;
+                updateUISelection();
+            } else {
+                endTimeInput.value = endTime.toFixed(2);
+            }
+        });
+
+        // --- 播放控制 (合二为一) ---
+        btnPlayToggle.addEventListener('click', () => {
+            if (!audioBuffer) return;
+
+            if (videoPlayer.paused) {
+                // 如果当前在暂停状态，或者已经播完，或者刚按下，
+                // 按要求：按下播放按钮时，一定要从起始点开始播放
+                videoPlayer.currentTime = startTime;
+                videoPlayer.playbackRate = parseFloat(playbackRateSelect.value);
+                videoPlayer.play();
+                updatePlayState(true);
+            } else {
+                videoPlayer.pause();
+                updatePlayState(false);
+            }
+        });
+
+        function updatePlayState(playing) {
+            isPlaying = playing;
+            if (playing) {
+                iconPlay.classList.add('hidden');
+                iconPause.classList.remove('hidden');
+            } else {
+                iconPlay.classList.remove('hidden');
+                iconPause.classList.add('hidden');
+            }
+        }
+
+        // 播放过程监控
+        videoPlayer.addEventListener('timeupdate', () => {
+            const current = videoPlayer.currentTime;
+            currentTimeDisplay.textContent = current.toFixed(2) + 's';
+
+            // 更新播放头位置
+            const width = document.getElementById('waveformBox').offsetWidth;
+            const headX = (current / duration) * width;
+            playHead.style.left = headX + 'px';
+
+            // 检查是否到达选区结束点
+            if (current >= endTime) {
+                videoPlayer.pause();
+                videoPlayer.currentTime = startTime; // 播完后回到起点
+                updatePlayState(false);
+            }
+        });
+
+        playbackRateSelect.addEventListener('change', () => {
+            videoPlayer.playbackRate = parseFloat(playbackRateSelect.value);
+        });
+
+        // --- 导出逻辑 (WAV) ---
+        btnExport.addEventListener('click', async () => {
+            if (!audioBuffer) return;
+            showStatus("正在切割并生成音频文件...");
+            
+            const segmentDuration = endTime - startTime;
+            const sampleRate = audioBuffer.sampleRate;
+            const numberOfChannels = audioBuffer.numberOfChannels;
+            const length = Math.floor(segmentDuration * sampleRate);
+
+            const offlineCtx = new OfflineAudioContext(numberOfChannels, length, sampleRate);
+            const segmentSource = offlineCtx.createBufferSource();
+            segmentSource.buffer = audioBuffer;
+            segmentSource.connect(offlineCtx.destination);
+            segmentSource.start(0, startTime, segmentDuration);
+
+            const renderedBuffer = await offlineCtx.startRendering();
+            const wavBlob = bufferToWave(renderedBuffer, length);
+            
+            const url = URL.createObjectURL(wavBlob);
+            const anchor = document.createElement('a');
+            anchor.href = url;
+            anchor.download = `cut_${Date.now()}.wav`;
+            anchor.click();
+            URL.revokeObjectURL(url);
+            
+            showStatus("保存成功！");
+            setTimeout(() => statusMsg.classList.add('hidden'), 3000);
+        });
+
+        // WAV 编码助手
+        function bufferToWave(abuffer, len) {
+            let numOfChan = abuffer.numberOfChannels,
+                length = len * numOfChan * 2 + 44,
+                buffer = new ArrayBuffer(length),
+                view = new DataView(buffer),
+                channels = [], i, sample,
+                offset = 0, pos = 0;
+
+            function setUint16(data) { view.setUint16(pos, data, true); pos += 2; }
+            function setUint32(data) { view.setUint32(pos, data, true); pos += 4; }
+
+            setUint32(0x46464952); setUint32(length - 8); setUint32(0x45564157);
+            setUint32(0x20746d66); setUint32(16); setUint16(1); setUint16(numOfChan);
+            setUint32(abuffer.sampleRate); setUint32(abuffer.sampleRate * 2 * numOfChan);
+            setUint16(numOfChan * 2); setUint16(16); setUint32(0x61746164); setUint32(length - pos - 4);
+
+            for(i = 0; i < numOfChan; i++) channels.push(abuffer.getChannelData(i));
+            while(pos < length) {
+                for(i = 0; i < numOfChan; i++) {
+                    sample = Math.max(-1, Math.min(1, channels[i][offset]));
+                    sample = (sample < 0 ? sample * 0x8000 : sample * 0x7FFF);
+                    view.setInt16(pos, sample, true);
+                    pos += 2;
+                }
+                offset++;
+            }
+            return new Blob([buffer], {type: "audio/wav"});
+        }
+
+        window.addEventListener('resize', () => {
+            if (audioBuffer) {
+                drawWaveform();
+                updateUISelection();
+            }
+        });
+    </script>
+</body>
+</html>
