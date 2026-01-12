@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>在线图片尺寸修改器</title>
+    <!-- 引入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入 Lucide 图标库 -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        /* 自定义样式：针对滑动条和一些过渡效果 */
+        .transition-all {
+            transition-property: all;
+            transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+            transition-duration: 300ms;
+        }
+        /* 隐藏 Canvas，因为我们只用它来处理数据 */
+        #processCanvas {
+            display: none;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 min-h-screen font-sans text-slate-800">
+
+    <!-- 顶部导航 -->
+    <header class="bg-white shadow-sm sticky top-0 z-10">
+        <div class="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+                <i data-lucide="scaling" class="text-blue-600 w-6 h-6"></i>
+                <h1 class="text-xl font-bold text-slate-800">图片尺寸修改器</h1>
+            </div>
+            <div class="text-sm text-slate-500 hidden sm:block">纯前端处理，图片不上传服务器</div>
+        </div>
+    </header>
+
+    <main class="max-w-5xl mx-auto px-4 py-8">
+        
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            
+            <!-- 左侧：控制面板 -->
+            <div class="lg:col-span-1 space-y-6">
+                
+                <!-- 上传区域 -->
+                <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                    <label class="block mb-2 text-sm font-medium text-slate-700">第一步：上传图片</label>
+                    <div id="dropZone" class="border-2 border-dashed border-blue-200 rounded-xl p-6 text-center hover:bg-blue-50 transition-colors cursor-pointer relative">
+                        <input type="file" id="fileInput" accept="image/*" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
+                        <div class="flex flex-col items-center justify-center space-y-2 pointer-events-none">
+                            <i data-lucide="image-plus" class="w-10 h-10 text-blue-400"></i>
+                            <p class="text-sm text-slate-600 font-medium">点击或拖拽图片到这里</p>
+                            <p class="text-xs text-slate-400">支持 JPG, PNG, WEBP</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 尺寸设置区域 (默认禁用，上传后启用) -->
+                <div id="controlsPanel" class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 opacity-50 pointer-events-none transition-all">
+                    <label class="block mb-4 text-sm font-medium text-slate-700">第二步：设置尺寸</label>
+                    
+                    <div class="space-y-4">
+                        <!-- 宽高输入 -->
+                        <div class="flex items-end gap-2">
+                            <div class="flex-1">
+                                <label for="widthInput" class="block text-xs text-slate-500 mb-1">宽度 (px)</label>
+                                <input type="number" id="widthInput" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-shadow font-mono text-center" placeholder="0">
+                            </div>
+                            
+                            <!-- 锁定比例按钮 -->
+                            <div class="pb-2">
+                                <button id="lockRatioBtn" class="p-2 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors" title="锁定/解锁纵横比">
+                                    <i data-lucide="link" id="lockIcon" class="w-5 h-5"></i>
+                                </button>
+                            </div>
+
+                            <div class="flex-1">
+                                <label for="heightInput" class="block text-xs text-slate-500 mb-1">高度 (px)</label>
+                                <input type="number" id="heightInput" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-shadow font-mono text-center" placeholder="0">
+                            </div>
+                        </div>
+
+                        <!-- 常用预设 (可选) -->
+                        <div>
+                            <span class="text-xs text-slate-400 mb-2 block">常用比例缩放:</span>
+                            <div class="flex gap-2">
+                                <button onclick="scaleImage(0.5)" class="text-xs px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-md text-slate-600 transition-colors">50%</button>
+                                <button onclick="scaleImage(0.75)" class="text-xs px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-md text-slate-600 transition-colors">75%</button>
+                                <button onclick="scaleImage(2)" class="text-xs px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-md text-slate-600 transition-colors">200%</button>
+                            </div>
+                        </div>
+
+                        <button id="applyBtn" class="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium shadow-md shadow-blue-200 hover:shadow-lg transition-all flex items-center justify-center gap-2">
+                            <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+                            应用修改
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 下载区域 -->
+                <div id="downloadPanel" class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 opacity-50 pointer-events-none transition-all">
+                    <label class="block mb-2 text-sm font-medium text-slate-700">第三步：保存结果</label>
+                    <div class="text-xs text-slate-500 mb-4" id="fileSizeDisplay">等待处理...</div>
+                    <button id="downloadBtn" class="w-full py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl font-medium shadow-md shadow-green-200 hover:shadow-lg transition-all flex items-center justify-center gap-2">
+                        <i data-lucide="download" class="w-4 h-4"></i>
+                        下载图片
+                    </button>
+                </div>
+
+            </div>
+
+            <!-- 右侧：预览区域 -->
+            <div class="lg:col-span-2">
+                <div class="bg-white rounded-2xl shadow-sm border border-slate-100 h-full min-h-[400px] flex flex-col overflow-hidden">
+                    <div class="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                        <span class="font-medium text-slate-700">预览</span>
+                        <span id="previewDimensions" class="text-xs bg-white px-2 py-1 rounded border border-slate-200 text-slate-500 hidden">0 x 0</span>
+                    </div>
+                    
+                    <!-- 预览容器 -->
+                    <div class="flex-1 relative bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiIgZmlsbD0iI2YxZjVZjkiPjxyZWN0IHdpZHRoPSI4IiBoZWlnaHQ9IjgiLz48cmVjdCB4PSI4IiB5PSI4IiB3aWR0aD0iOCIgaGVpZ2h0PSI4Ii8+PC9zdmc+')] bg-repeat flex items-center justify-center p-4 overflow-auto">
+                        
+                        <!-- 初始占位提示 -->
+                        <div id="placeholderState" class="text-center">
+                            <div class="bg-white p-4 rounded-full shadow-sm inline-block mb-3">
+                                <i data-lucide="image" class="w-8 h-8 text-slate-300"></i>
+                            </div>
+                            <p class="text-slate-400">请先上传图片预览</p>
+                        </div>
+
+                        <!-- 图片显示 -->
+                        <img id="previewImage" class="max-w-full max-h-[600px] object-contain shadow-lg rounded hidden transition-all duration-300" src="" alt="Preview">
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </main>
+    
+    <!-- 隐藏的 Canvas 用于处理图片 -->
+    <canvas id="processCanvas"></canvas>
+
+    <script>
+        // 初始化图标
+        lucide.createIcons();
+
+        // 获取 DOM 元素
+        const fileInput = document.getElementById('fileInput');
+        const dropZone = document.getElementById('dropZone');
+        const widthInput = document.getElementById('widthInput');
+        const heightInput = document.getElementById('heightInput');
+        const lockRatioBtn = document.getElementById('lockRatioBtn');
+        const lockIcon = document.getElementById('lockIcon');
+        const applyBtn = document.getElementById('applyBtn');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const previewImage = document.getElementById('previewImage');
+        const placeholderState = document.getElementById('placeholderState');
+        const controlsPanel = document.getElementById('controlsPanel');
+        const downloadPanel = document.getElementById('downloadPanel');
+        const previewDimensions = document.getElementById('previewDimensions');
+        const fileSizeDisplay = document.getElementById('fileSizeDisplay');
+        const canvas = document.getElementById('processCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // 状态变量
+        let originalImage = new Image();
+        let originalWidth = 0;
+        let originalHeight = 0;
+        let aspectRatio = 0;
+        let isRatioLocked = true; // 默认锁定比例
+        let currentFileType = 'image/png';
+        let currentFileName = 'resized-image';
+
+        // 1. 上传图片处理
+        fileInput.addEventListener('change', handleFileSelect);
+
+        // 拖拽支持
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('bg-blue-50', 'border-blue-400');
+        });
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('bg-blue-50', 'border-blue-400');
+        });
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('bg-blue-50', 'border-blue-400');
+            if (e.dataTransfer.files.length) {
+                fileInput.files = e.dataTransfer.files;
+                handleFileSelect({ target: fileInput });
+            }
+        });
+
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            // 保存文件类型和名称用于下载
+            currentFileType = file.type;
+            const nameParts = file.name.split('.');
+            if (nameParts.length > 1) nameParts.pop();
+            currentFileName = nameParts.join('.');
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                originalImage.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        // 图片加载完成后初始化
+        originalImage.onload = () => {
+            originalWidth = originalImage.width;
+            originalHeight = originalImage.height;
+            aspectRatio = originalWidth / originalHeight;
+
+            // 填充输入框
+            widthInput.value = originalWidth;
+            heightInput.value = originalHeight;
+
+            // 显示图片
+            previewImage.src = originalImage.src;
+            previewImage.classList.remove('hidden');
+            placeholderState.classList.add('hidden');
+            previewDimensions.classList.remove('hidden');
+            updateDimensionLabel(originalWidth, originalHeight);
+
+            // 启用面板
+            controlsPanel.classList.remove('opacity-50', 'pointer-events-none');
+            
+            // 自动触发一次处理以便准备下载
+            processImage();
+        };
+
+        // 2. 锁定/解锁比例逻辑
+        lockRatioBtn.addEventListener('click', () => {
+            isRatioLocked = !isRatioLocked;
+            if (isRatioLocked) {
+                lockIcon.setAttribute('data-lucide', 'link');
+                lockRatioBtn.classList.add('text-blue-600');
+                lockRatioBtn.classList.remove('text-slate-400');
+                // 重新对齐比例
+                handleWidthChange();
+            } else {
+                lockIcon.setAttribute('data-lucide', 'link-2-off');
+                lockRatioBtn.classList.remove('text-blue-600');
+                lockRatioBtn.classList.add('text-slate-400');
+            }
+            lucide.createIcons();
+        });
+
+        // 监听输入框变化
+        widthInput.addEventListener('input', handleWidthChange);
+        heightInput.addEventListener('input', handleHeightChange);
+
+        function handleWidthChange() {
+            if (!originalWidth) return;
+            if (isRatioLocked) {
+                const w = parseFloat(widthInput.value);
+                if (!isNaN(w)) {
+                    heightInput.value = Math.round(w / aspectRatio);
+                }
+            }
+        }
+
+        function handleHeightChange() {
+            if (!originalWidth) return;
+            if (isRatioLocked) {
+                const h = parseFloat(heightInput.value);
+                if (!isNaN(h)) {
+                    widthInput.value = Math.round(h * aspectRatio);
+                }
+            }
+        }
+
+        // 辅助函数：按百分比缩放
+        window.scaleImage = (factor) => {
+            if (!originalWidth) return;
+            const newW = Math.round(originalWidth * factor);
+            const newH = Math.round(originalHeight * factor);
+            widthInput.value = newW;
+            heightInput.value = newH;
+            processImage();
+        };
+
+        // 3. 处理图片（Resize）
+        applyBtn.addEventListener('click', processImage);
+
+        function processImage() {
+            const w = parseInt(widthInput.value);
+            const h = parseInt(heightInput.value);
+
+            if (!w || !h || w <= 0 || h <= 0) {
+                alert("请输入有效的宽度和高度");
+                return;
+            }
+
+            // 设置 Canvas 尺寸
+            canvas.width = w;
+            canvas.height = h;
+
+            // 绘制图片 (这会执行变形)
+            // 启用图像平滑处理，提高缩放质量
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+            ctx.drawImage(originalImage, 0, 0, w, h);
+
+            // 更新预览
+            const dataUrl = canvas.toDataURL(currentFileType, 0.92); // 0.92 是 jpg/webp 的质量参数
+            previewImage.src = dataUrl;
+
+            // 更新标签
+            updateDimensionLabel(w, h);
+
+            // 计算大致文件大小 (Base64长度 * 0.75 / 1024 = KB)
+            const head = 'data:' + currentFileType + ';base64,';
+            const sizeInBytes = Math.round((dataUrl.length - head.length) * 3 / 4);
+            const sizeInKb = (sizeInBytes / 1024).toFixed(2);
+            fileSizeDisplay.textContent = `生成尺寸: ${w} x ${h} | 预估大小: ${sizeInKb} KB`;
+
+            // 启用下载面板
+            downloadPanel.classList.remove('opacity-50', 'pointer-events-none');
+        }
+
+        function updateDimensionLabel(w, h) {
+            previewDimensions.textContent = `${w} x ${h} px`;
+        }
+
+        // 4. 下载逻辑
+        downloadBtn.addEventListener('click', () => {
+            const link = document.createElement('a');
+            link.download = `${currentFileName}_resized_${widthInput.value}x${heightInput.value}.${currentFileType.split('/')[1]}`;
+            // 使用 Canvas 的数据，确保下载的是处理后的版本
+            link.href = canvas.toDataURL(currentFileType, 0.92);
+            link.click();
+        });
+
+    </script>
+</body>
+</html>
